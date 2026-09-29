@@ -19,8 +19,7 @@ impl<'octo> RepoSecretsHandler<'octo> {
     /// You must authenticate using an access token with the `repo` scope to use this endpoint.
     /// GitHub Apps must have the `secrets` repository permission to use this endpoint.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let all_secrets = octocrab.repos("owner", "repo")
     ///     .secrets()
     ///     .get_secrets()
@@ -40,8 +39,7 @@ impl<'octo> RepoSecretsHandler<'octo> {
     /// If the repository is private you must use an access token with the `repo` scope.
     /// GitHub Apps must have the `secrets` repository permission to use this endpoint.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let public_key = octocrab.repos("owner", "repo")
     ///     .secrets()
     ///     .get_public_key()
@@ -57,8 +55,7 @@ impl<'octo> RepoSecretsHandler<'octo> {
     /// You must authenticate using an access token with the `repo` scope to use this endpoint.
     /// GitHub Apps must have the `secrets` repository permission to use this endpoint.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let secret_info = octocrab.repos("owner", "repo")
     ///     .secrets()
     ///     .get_secret("TOKEN")
@@ -82,8 +79,7 @@ impl<'octo> RepoSecretsHandler<'octo> {
     /// You must authenticate using an access token with the `repo` scope to use this endpoint.
     /// GitHub Apps must have the `secrets` repository permission to use this endpoint.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// use octocrab::models::repos::secrets::{CreateRepositorySecret, CreateRepositorySecretResponse};
     ///
     /// let result = octocrab.repos("owner", "repo")
@@ -134,8 +130,7 @@ impl<'octo> RepoSecretsHandler<'octo> {
     /// You must authenticate using an access token with the `admin:org` scope to use this endpoint.
     /// GitHub Apps must have the `secrets` organization permission to use this endpoint.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let repo = octocrab.repos("owner", "repo")
     ///     .secrets()
     ///     .delete_secret("GH_TOKEN")
@@ -153,5 +148,17 @@ impl<'octo> RepoSecretsHandler<'octo> {
         let resp = self.handler.crab._delete(route, None::<&()>).await?;
         crate::map_github_error(resp).await?;
         Ok(())
+    }
+
+    /// Lists all organization secrets available in a repository without revealing their encrypted values.
+    /// You must authenticate using an access token with the `repo` scope to use this endpoint.
+    /// GitHub Apps must have the `secrets` repository permission to use this endpoint.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/actions/secrets?apiVersion=2022-11-28#list-repository-organization-secrets)
+    pub async fn list_org_secrets(
+        &self,
+    ) -> crate::Result<crate::models::repos::secrets::RepositorySecrets> {
+        let route = format!("/{}/actions/organization-secrets", self.handler.repo);
+        self.handler.crab.get(route, None::<&()>).await
     }
 }

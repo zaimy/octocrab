@@ -1,20 +1,58 @@
 //! The Organization API.
 
-mod copilot;
-mod copilot_seat_manager;
+mod code_scanning;
+pub mod codespaces;
+pub mod copilot;
+pub mod copilot_seat_manager;
+mod custom_properties;
+pub mod dependabot;
 mod events;
+mod hooks;
+mod invitations;
+mod issues;
 mod list_members;
 mod list_repos;
+pub mod migrations;
+mod personal_access_tokens;
+mod roles;
+mod rulesets;
+mod secret_scanning_alerts;
 mod secrets;
+mod variables;
 
+pub use self::code_scanning::{ListOrgCodeScanningAlertsBuilder, OrgCodeScanningHandler};
+pub use self::codespaces::OrgCodespacesHandler;
+pub use self::custom_properties::{ListOrgCustomPropertyValuesBuilder, OrgCustomPropertiesHandler};
+pub use self::dependabot::OrgDependabotHandler;
 pub use self::events::ListOrgEventsBuilder;
+pub use self::hooks::{ListOrgHooksBuilder, OrgHooksHandler, UpdateOrgHookBuilder};
+pub use self::invitations::{
+    CreateOrgInvitationBuilder, ListFailedOrgInvitationsBuilder, ListOrgInvitationTeamsBuilder,
+    ListOrgInvitationsBuilder, OrgInvitationsHandler,
+};
+pub use self::issues::ListOrgIssuesBuilder;
 pub use self::list_members::ListOrgMembersBuilder;
 pub use self::list_repos::ListReposBuilder;
+pub use self::migrations::OrgMigrationsHandler;
+pub use self::personal_access_tokens::{
+    ListOrgPatRepositoriesBuilder, ListOrgPatRequestRepositoriesBuilder, ListOrgPatRequestsBuilder,
+    ListOrgPersonalAccessTokensBuilder, OrgPersonalAccessTokensHandler,
+};
+pub use self::roles::OrgRolesHandler;
+pub use self::rulesets::{
+    ListOrgRuleSuitesBuilder, ListOrgRulesetsBuilder, OrgRuleSuitesHandler, OrgRulesetsHandler,
+};
+pub use self::secret_scanning_alerts::OrgSecretScanningAlertsHandler;
 pub use self::secrets::OrgSecretsHandler;
+pub use self::variables::OrgVariablesHandler;
+pub use crate::api::billing::ScopedBillingHandler as OrgBillingHandler;
+pub use crate::api::security_advisories::OrgSecurityAdvisoriesHandler;
 use crate::error::HttpSnafu;
 use crate::models::interaction_limits;
 use crate::models::interaction_limits::InteractionLimit;
+use crate::models::{Author, Installation};
 use crate::Octocrab;
+use crate::Page;
 use http::{StatusCode, Uri};
 use interaction_limits::{InteractionLimitExpiry, InteractionLimitType};
 use snafu::ResultExt;
@@ -32,6 +70,127 @@ impl<'octo> OrgHandler<'octo> {
         Self { crab, owner }
     }
 
+    /// Handle billing for the organization.
+    ///
+    /// See: <https://docs.github.com/en/rest/billing?apiVersion=2022-11-28>
+    pub fn billing(&self) -> crate::api::billing::ScopedBillingHandler<'octo> {
+        crate::api::billing::ScopedBillingHandler::new(
+            self.crab,
+            crate::api::billing::BillingOwner::Org(self.owner.clone()),
+        )
+    }
+
+    /// Handle packages for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/packages/packages?apiVersion=2022-11-28)
+    pub fn packages(&self) -> crate::api::packages::PackagesHandler<'octo> {
+        crate::api::packages::PackagesHandler::new(
+            self.crab,
+            crate::api::packages::PackagesOwner::Org(self.owner.clone()),
+        )
+    }
+
+    /// Handle Codespaces for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/codespaces/organizations?apiVersion=2022-11-28)
+    pub fn codespaces(&self) -> OrgCodespacesHandler<'octo> {
+        OrgCodespacesHandler::new(self.crab, self.owner.clone())
+    }
+
+    /// Handle migrations for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/migrations/orgs?apiVersion=2022-11-28)
+    pub fn migrations(&self) -> OrgMigrationsHandler<'octo> {
+        OrgMigrationsHandler::new(self.crab, self.owner.clone())
+    }
+
+    /// Handle Dependabot for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/dependabot?apiVersion=2022-11-28)
+    pub fn dependabot(&self) -> OrgDependabotHandler<'octo> {
+        OrgDependabotHandler::new(self.crab, self.owner.clone())
+    }
+
+    /// Handle security advisories for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/security-advisories/repository-advisories?apiVersion=2022-11-28#list-repository-security-advisories-for-an-organization)
+    pub fn security_advisories(&self) -> OrgSecurityAdvisoriesHandler<'octo> {
+        OrgSecurityAdvisoriesHandler::new(self.crab, self.owner.clone())
+    }
+
+    /// Handle secret scanning alerts for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/secret-scanning?apiVersion=2022-11-28#list-secret-scanning-alerts-for-an-organization)
+    pub fn secret_scanning(&self) -> OrgSecretScanningAlertsHandler<'_> {
+        OrgSecretScanningAlertsHandler::new(self)
+    }
+
+    /// Handle secret scanning alerts for the organization (alias for [`secret_scanning`][OrgHandler::secret_scanning]).
+    pub fn secrets_scanning(&self) -> OrgSecretScanningAlertsHandler<'_> {
+        self.secret_scanning()
+    }
+
+    /// Handle code scanning alerts for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/code-scanning/code-scanning?apiVersion=2022-11-28#list-code-scanning-alerts-for-an-organization)
+    pub fn code_scanning(&self) -> OrgCodeScanningHandler<'octo, '_> {
+        OrgCodeScanningHandler::new(self)
+    }
+
+    /// Handle code scanning alerts for the organization (alias for [`code_scanning`][OrgHandler::code_scanning]).
+    pub fn code_scannings(&self) -> OrgCodeScanningHandler<'octo, '_> {
+        self.code_scanning()
+    }
+
+    /// Handle rulesets for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/rules?apiVersion=2022-11-28)
+    pub fn rulesets(&self) -> OrgRulesetsHandler<'octo, '_> {
+        OrgRulesetsHandler::new(self)
+    }
+
+    /// Handle webhooks for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/webhooks?apiVersion=2022-11-28)
+    pub fn hooks(&self) -> OrgHooksHandler<'octo, '_> {
+        OrgHooksHandler::new(self)
+    }
+
+    /// Handle custom properties for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/custom-properties?apiVersion=2022-11-28)
+    pub fn custom_properties(&self) -> OrgCustomPropertiesHandler<'octo, '_> {
+        OrgCustomPropertiesHandler::new(self)
+    }
+
+    /// Handle organization roles.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/organization-roles?apiVersion=2022-11-28)
+    pub fn roles(&self) -> OrgRolesHandler<'octo, '_> {
+        OrgRolesHandler::new(self)
+    }
+
+    /// Handle invitations for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/members?apiVersion=2022-11-28)
+    pub fn invitations(&self) -> OrgInvitationsHandler<'octo, '_> {
+        OrgInvitationsHandler::new(self)
+    }
+
+    /// Handle fine-grained personal access tokens for the organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/personal-access-tokens?apiVersion=2022-11-28)
+    pub fn personal_access_tokens(&self) -> OrgPersonalAccessTokensHandler<'octo, '_> {
+        OrgPersonalAccessTokensHandler::new(self)
+    }
+
+    /// List organization issues assigned to the authenticated user.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-organization-issues-assigned-to-the-authenticated-user)
+    pub fn list_issues(&self) -> ListOrgIssuesBuilder<'octo, '_, '_> {
+        ListOrgIssuesBuilder::new(self)
+    }
+
     /// Add or update organization membership
     ///
     /// **Note**
@@ -47,8 +206,7 @@ impl<'octo> OrgHandler<'octo> {
     ///   been made an organization owner. If the authenticated user changes an
     ///   owner's role to member, no email will be sent.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let invitation = octocrab.orgs("owner").add_or_update_membership("ferris", None).await?;
     /// # Ok(())
     /// # }
@@ -72,8 +230,7 @@ impl<'octo> OrgHandler<'octo> {
     /// Check if a user is, publicly or privately, a member of the organization.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// assert!(octocrab.orgs("owner").check_membership("ferris").await?);
     /// # Ok(())
     /// # }
@@ -107,8 +264,7 @@ impl<'octo> OrgHandler<'octo> {
     /// requires all members, billing managers, and outside collaborators to
     /// enable two-factor authentication.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let org = octocrab.orgs("owner").get().await?;
     /// # Ok(())
     /// # }
@@ -183,8 +339,7 @@ impl<'octo> OrgHandler<'octo> {
     ///
     /// # Examples
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// use octocrab::models::hooks::{Hook, Config as HookConfig, ContentType as HookContentType};
     ///
     /// let config = HookConfig {
@@ -232,14 +387,20 @@ impl<'octo> OrgHandler<'octo> {
 
     /// Handle secrets on the organizaton
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// let octocrab = octocrab::instance();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let secrets = octocrab.orgs("org").secrets();
     /// # Ok(())
     /// # }
     /// ```
     pub fn secrets(&self) -> secrets::OrgSecretsHandler<'_> {
         secrets::OrgSecretsHandler::new(self)
+    }
+
+    /// Client for GitHub's organization variables API.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/actions/variables?apiVersion=2022-11-28)
+    pub fn variables(&self) -> OrgVariablesHandler<'_> {
+        OrgVariablesHandler::new(self)
     }
 
     /// ### Get interaction restrictions for an organization
@@ -261,7 +422,7 @@ impl<'octo> OrgHandler<'octo> {
     pub async fn get_interaction_restrictions(
         &self,
     ) -> crate::Result<interaction_limits::InteractionLimit> {
-        let route = format!("/orgs/{}/interaction-limits", &self.owner);
+        let route = format!("/orgs/{}/interaction-limits", self.owner);
         self.crab.get(route, None::<&()>).await
     }
 
@@ -286,7 +447,7 @@ impl<'octo> OrgHandler<'octo> {
         limit_type: InteractionLimitType,
         expiry: InteractionLimitExpiry,
     ) -> crate::Result<InteractionLimit> {
-        let route = format!("/orgs/{}/interaction-limits", &self.owner);
+        let route = format!("/orgs/{}/interaction-limits", self.owner);
         let body = serde_json::json!({
             "limit": limit_type,
             "expiry": expiry,
@@ -294,13 +455,16 @@ impl<'octo> OrgHandler<'octo> {
         self.crab.put(route, Some(&body)).await
     }
 
-    /// Handle copilot-related calls on the organization
+    /// Handle copilot-related calls on the organization.
+    ///
+    /// Note: You can also use the top-level [`Octocrab::copilot().org(...)`][crate::Octocrab::copilot] entry point.
     ///
     /// # Examples
     /// ```no_run
-    /// async fn run() {
-    ///     let copilot_usage = octocrab::instance().orgs("org").copilot().metrics().await.expect("failed to retrieve usage");
-    /// }
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let copilot_usage = octocrab.orgs("org").copilot().metrics().await.expect("failed to retrieve usage");
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn copilot(&self) -> copilot::CopilotHandler<'octo, '_> {
         copilot::CopilotHandler::new(self)
@@ -331,8 +495,407 @@ impl<'octo> OrgHandler<'octo> {
     ///  }
     /// ```
     pub async fn remove_interaction_restrictions(&self) -> crate::Result<()> {
-        let route = format!("/orgs/{}/interaction-limits", &self.owner);
+        let route = format!("/orgs/{}/interaction-limits", self.owner);
         let response = self.crab._delete(route, None::<&()>).await?;
         crate::map_github_error(response).await.map(drop)
+    }
+
+    /// Lists public members of an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/members?apiVersion=2022-11-28#list-public-organization-members)
+    pub fn list_public_members(&self) -> ListPublicMembersBuilder<'octo, '_> {
+        ListPublicMembersBuilder::new(self)
+    }
+
+    /// Checks if a user is a public member of an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/members?apiVersion=2022-11-28#check-public-organization-membership-for-a-user)
+    pub async fn check_public_membership(&self, username: impl AsRef<str>) -> crate::Result<bool> {
+        let route = format!(
+            "/orgs/{org}/public_members/{username}",
+            org = self.owner,
+            username = username.as_ref()
+        );
+        let uri = Uri::builder()
+            .path_and_query(route)
+            .build()
+            .context(HttpSnafu)?;
+        let response = self.crab._get(uri).await?;
+        match response.status() {
+            StatusCode::NO_CONTENT => Ok(true),
+            StatusCode::NOT_FOUND => Ok(false),
+            _ => Err(crate::map_github_error(response).await.unwrap_err()),
+        }
+    }
+
+    /// Sets public organization membership for the authenticated user.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/members?apiVersion=2022-11-28#set-public-organization-membership-for-the-authenticated-user)
+    pub async fn publicize_membership(&self, username: impl AsRef<str>) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/public_members/{username}",
+            org = self.owner,
+            username = username.as_ref()
+        );
+        let response = self.crab._put(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Removes public organization membership for the authenticated user.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/members?apiVersion=2022-11-28#remove-public-organization-membership-for-the-authenticated-user)
+    pub async fn conceal_membership(&self, username: impl AsRef<str>) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/public_members/{username}",
+            org = self.owner,
+            username = username.as_ref()
+        );
+        let response = self.crab._delete(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Lists outside collaborators for an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/outside-collaborators?apiVersion=2022-11-28#list-outside-collaborators-for-an-organization)
+    pub fn list_outside_collaborators(&self) -> ListOutsideCollaboratorsBuilder<'octo, '_> {
+        ListOutsideCollaboratorsBuilder::new(self)
+    }
+
+    /// Converts an organization member to outside collaborator.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/outside-collaborators?apiVersion=2022-11-28#convert-an-organization-member-to-outside-collaborator)
+    pub async fn convert_to_outside_collaborator(
+        &self,
+        username: impl AsRef<str>,
+    ) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/outside_collaborators/{username}",
+            org = self.owner,
+            username = username.as_ref()
+        );
+        let response = self.crab._put(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Removes an outside collaborator from an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/outside-collaborators?apiVersion=2022-11-28#remove-outside-collaborator-from-an-organization)
+    pub async fn remove_outside_collaborator(
+        &self,
+        username: impl AsRef<str>,
+    ) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/outside_collaborators/{username}",
+            org = self.owner,
+            username = username.as_ref()
+        );
+        let response = self.crab._delete(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Lists users blocked by an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/blocking?apiVersion=2022-11-28#list-users-blocked-by-an-organization)
+    pub fn list_blocked_users(&self) -> ListBlockedUsersBuilder<'octo, '_> {
+        ListBlockedUsersBuilder::new(self)
+    }
+
+    /// Checks if a user is blocked by an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/blocking?apiVersion=2022-11-28#check-if-a-user-is-blocked-by-an-organization)
+    pub async fn check_blocked_user(&self, username: impl AsRef<str>) -> crate::Result<bool> {
+        let route = format!(
+            "/orgs/{org}/blocks/{username}",
+            org = self.owner,
+            username = username.as_ref()
+        );
+        let uri = Uri::builder()
+            .path_and_query(route)
+            .build()
+            .context(HttpSnafu)?;
+        let response = self.crab._get(uri).await?;
+        match response.status() {
+            StatusCode::NO_CONTENT => Ok(true),
+            StatusCode::NOT_FOUND => Ok(false),
+            _ => Err(crate::map_github_error(response).await.unwrap_err()),
+        }
+    }
+
+    /// Blocks a user from an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/blocking?apiVersion=2022-11-28#block-a-user-from-an-organization)
+    pub async fn block_user(&self, username: impl AsRef<str>) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/blocks/{username}",
+            org = self.owner,
+            username = username.as_ref()
+        );
+        let response = self.crab._put(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Unblocks a user from an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/blocking?apiVersion=2022-11-28#unblock-a-user-from-an-organization)
+    pub async fn unblock_user(&self, username: impl AsRef<str>) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/blocks/{username}",
+            org = self.owner,
+            username = username.as_ref()
+        );
+        let response = self.crab._delete(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Lists teams that are security managers for an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/security-managers?apiVersion=2022-11-28#list-security-manager-teams)
+    pub async fn list_security_managers(&self) -> crate::Result<Vec<crate::models::teams::Team>> {
+        let route = format!("/orgs/{org}/security-managers", org = self.owner);
+        self.crab.get(route, None::<&()>).await
+    }
+
+    /// Adds a security manager team to an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/security-managers?apiVersion=2022-11-28#add-a-security-manager-team)
+    pub async fn add_security_manager_team(&self, team_slug: impl AsRef<str>) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/security-managers/teams/{team_slug}",
+            org = self.owner,
+            team_slug = team_slug.as_ref()
+        );
+        let response = self.crab._put(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Removes a security manager team from an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/security-managers?apiVersion=2022-11-28#remove-a-security-manager-team)
+    pub async fn remove_security_manager_team(
+        &self,
+        team_slug: impl AsRef<str>,
+    ) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/security-managers/teams/{team_slug}",
+            org = self.owner,
+            team_slug = team_slug.as_ref()
+        );
+        let response = self.crab._delete(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Enables or disables a security feature for an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/orgs?apiVersion=2022-11-28#enable-or-disable-a-security-feature-for-an-organization)
+    pub async fn set_security_product_enablement(
+        &self,
+        product: crate::models::orgs::security::SecurityProduct,
+        enablement: crate::models::orgs::security::SecurityEnablement,
+    ) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/{product}/{enablement}",
+            org = self.owner,
+            product = product,
+            enablement = enablement
+        );
+        let response = self.crab._patch(route, None::<&()>).await?;
+        if !response.status().is_success() {
+            return Err(crate::map_github_error(response).await.unwrap_err());
+        }
+        Ok(())
+    }
+
+    /// Lists app installations for an organization.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/orgs?apiVersion=2022-11-28#list-app-installations-for-an-organization)
+    pub fn list_installations(&self) -> ListOrgInstallationsBuilder<'octo, '_> {
+        ListOrgInstallationsBuilder::new(self)
+    }
+
+    /// Gets an organization installation for the authenticated app.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/apps/apps?apiVersion=2022-11-28#get-an-organization-installation-for-the-authenticated-app)
+    pub async fn installation(&self) -> crate::Result<crate::models::Installation> {
+        let route = format!("/orgs/{}/installation", self.owner);
+        self.crab.get(route, None::<&()>).await
+    }
+}
+
+/// Builder for listing public organization members.
+#[derive(serde::Serialize)]
+pub struct ListPublicMembersBuilder<'octo, 'r> {
+    #[serde(skip)]
+    handler: &'r OrgHandler<'octo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    per_page: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<u32>,
+}
+
+impl<'octo, 'r> ListPublicMembersBuilder<'octo, 'r> {
+    pub(crate) fn new(handler: &'r OrgHandler<'octo>) -> Self {
+        Self {
+            handler,
+            per_page: None,
+            page: None,
+        }
+    }
+
+    pub fn per_page(mut self, per_page: impl Into<u8>) -> Self {
+        self.per_page = Some(per_page.into());
+        self
+    }
+
+    pub fn page(mut self, page: impl Into<u32>) -> Self {
+        self.page = Some(page.into());
+        self
+    }
+
+    pub async fn send(self) -> crate::Result<Page<Author>> {
+        let route = format!("/orgs/{org}/public_members", org = self.handler.owner);
+        self.handler.crab.get(route, Some(&self)).await
+    }
+}
+
+/// Builder for listing outside collaborators for an organization.
+#[derive(serde::Serialize)]
+pub struct ListOutsideCollaboratorsBuilder<'octo, 'r> {
+    #[serde(skip)]
+    handler: &'r OrgHandler<'octo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    per_page: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<u32>,
+}
+
+impl<'octo, 'r> ListOutsideCollaboratorsBuilder<'octo, 'r> {
+    pub(crate) fn new(handler: &'r OrgHandler<'octo>) -> Self {
+        Self {
+            handler,
+            filter: None,
+            per_page: None,
+            page: None,
+        }
+    }
+
+    pub fn filter(mut self, filter: impl Into<String>) -> Self {
+        self.filter = Some(filter.into());
+        self
+    }
+
+    pub fn per_page(mut self, per_page: impl Into<u8>) -> Self {
+        self.per_page = Some(per_page.into());
+        self
+    }
+
+    pub fn page(mut self, page: impl Into<u32>) -> Self {
+        self.page = Some(page.into());
+        self
+    }
+
+    pub async fn send(self) -> crate::Result<Page<Author>> {
+        let route = format!(
+            "/orgs/{org}/outside_collaborators",
+            org = self.handler.owner
+        );
+        self.handler.crab.get(route, Some(&self)).await
+    }
+}
+
+/// Builder for listing users blocked by an organization.
+#[derive(serde::Serialize)]
+pub struct ListBlockedUsersBuilder<'octo, 'r> {
+    #[serde(skip)]
+    handler: &'r OrgHandler<'octo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    per_page: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<u32>,
+}
+
+impl<'octo, 'r> ListBlockedUsersBuilder<'octo, 'r> {
+    pub(crate) fn new(handler: &'r OrgHandler<'octo>) -> Self {
+        Self {
+            handler,
+            per_page: None,
+            page: None,
+        }
+    }
+
+    pub fn per_page(mut self, per_page: impl Into<u8>) -> Self {
+        self.per_page = Some(per_page.into());
+        self
+    }
+
+    pub fn page(mut self, page: impl Into<u32>) -> Self {
+        self.page = Some(page.into());
+        self
+    }
+
+    pub async fn send(self) -> crate::Result<Page<Author>> {
+        let route = format!("/orgs/{org}/blocks", org = self.handler.owner);
+        self.handler.crab.get(route, Some(&self)).await
+    }
+}
+
+/// Builder for listing app installations for an organization.
+#[derive(serde::Serialize)]
+pub struct ListOrgInstallationsBuilder<'octo, 'r> {
+    #[serde(skip)]
+    handler: &'r OrgHandler<'octo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    per_page: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<u32>,
+}
+
+impl<'octo, 'r> ListOrgInstallationsBuilder<'octo, 'r> {
+    pub(crate) fn new(handler: &'r OrgHandler<'octo>) -> Self {
+        Self {
+            handler,
+            per_page: None,
+            page: None,
+        }
+    }
+
+    pub fn per_page(mut self, per_page: impl Into<u8>) -> Self {
+        self.per_page = Some(per_page.into());
+        self
+    }
+
+    pub fn page(mut self, page: impl Into<u32>) -> Self {
+        self.page = Some(page.into());
+        self
+    }
+
+    pub async fn send(self) -> crate::Result<Page<Installation>> {
+        let route = format!("/orgs/{org}/installations", org = self.handler.owner);
+        self.handler.crab.get(route, Some(&self)).await
     }
 }

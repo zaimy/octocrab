@@ -10,30 +10,128 @@ use url::Url;
 
 use crate::params::users::emails::EmailVisibilityState;
 pub use apps::App;
+pub use billing::{
+    ActionsBillingUsage, BillingAiCreditUsageReport, BillingModelUsageItem,
+    BillingPremiumRequestUsageReport, BillingSummaryUsageItem, BillingTimePeriod,
+    BillingUsageReport, BillingUsageReportItem, BillingUsageSummaryReport, Budget, BudgetAlerting,
+    BudgetScope, BudgetType, CombinedBillingUsage, CreateBudget, CreateBudgetResponse,
+    DeleteBudgetResponse, EffectiveBudget, GetAllBudgets, MinutesUsedBreakdown,
+    PackagesBillingUsage, SharedStorageBillingUsage, UpdateBudget, UpdateBudgetResponse,
+};
+pub use gpg_keys::{GpgKey, SubKeyInfo, VerifiedEmailInfo};
+pub use hovercard::{Hovercard, HovercardContext};
+pub use migrations::*;
+pub use packages::{
+    ContainerMetadata, DockerMetadata, Package, PackageType, PackageVersion,
+    PackageVersionMetadata, PackageVersionState, PackageVisibility,
+};
+pub use repos::branches;
+pub use repos::codeowners;
+pub use repos::custom_properties;
+pub use repos::environments;
+pub use repos::pages;
+pub use repos::secret_scanning_alert;
+pub use repos::security;
+pub use repos::stats;
+pub use repos::Activity;
+pub use repos::ActivityType;
+pub use repos::Autolink;
+pub use repos::CodeownersError;
+pub use repos::CodeownersErrors;
+pub use repos::CustomPropertyValue;
+pub use repos::DeployKey;
+pub use repos::InvitationPermission;
+pub use repos::MergedUpstream;
+pub use repos::RepoTopics;
+pub use repos::RepositoryInvitation;
+#[allow(deprecated)]
+pub use repos::TagProtection;
+pub use repos::{
+    AdminEnforcement, BranchLinks, BranchProtection, BranchProtectionRestrictions,
+    BranchProtectionSummary, DetailedBranch, DismissalRestrictions, ProtectionFlag,
+    RequiredPullRequestReviews, RequiredStatusChecks, StatusCheck,
+};
+pub use repos::{AutomatedSecurityFixes, PrivateVulnerabilityReporting};
+pub use repos::{
+    BranchPolicyType, CustomDeploymentProtectionRule, CustomDeploymentProtectionRules,
+    CustomDeploymentRuleApp, CustomDeploymentRuleApps, DeploymentBranchPolicies,
+    DeploymentBranchPolicy, DeploymentBranchPolicySettings, Environment, EnvironmentProtectionRule,
+    EnvironmentProtectionRuleReviewer, EnvironmentReviewer, Environments, ReviewerType,
+};
+pub use repos::{Clones, PathTraffic, ReferrerTraffic, TrafficEntry, Views};
+pub use repos::{
+    CodeFrequency, CommitActivity, ContributorActivity, ContributorWeeklyActivity,
+    ParticipationStats, PunchCard,
+};
+pub use repos::{Deployment, DeploymentStatus, DeploymentStatusState};
+pub use repos::{
+    PageBuild, PageBuildError, PageBuildStatus, PagesBuildType, PagesDeployment, PagesDeploymentId,
+    PagesDeploymentStatus, PagesDeploymentStatusState, PagesDomainHealth, PagesHealthCheck,
+    PagesHttpsCertificate, PagesSite, PagesSource, UpdatePagesSource,
+};
+pub use security_advisories::{RepositoryAdvisory, SecurityAdvisory};
 
 pub mod actions;
 pub mod activity;
+pub use activity::{Feeds, RepositorySubscription};
 pub mod apps;
+pub mod billing;
 pub mod checks;
 pub mod classroom;
 pub mod code_scannings;
+pub mod codespaces;
+pub mod marketplace;
+pub use codespaces::Codespace;
 pub mod codes_of_conduct;
 pub mod commits;
+pub mod dependabot;
+pub mod dependency_graph;
+pub use dependency_graph::DependencyDiff;
 pub mod events;
+pub mod git;
+pub use git::{CreateTreeEntry, CreatedBlob, GitBlob, GitTree, GitTreeEntry, TagObject};
 pub mod gists;
+pub mod gpg_keys;
 pub mod hooks;
+pub mod hovercard;
 pub mod interaction_limits;
 pub mod issues;
+pub mod memberships;
+pub mod meta;
+pub mod migrations;
 pub mod orgs;
+/// Preserved for backwards compatibility. Use [`copilot`] for the standard tag namespace.
 pub mod orgs_copilot;
+pub mod copilot {
+    pub use super::orgs_copilot::*;
+    pub use billing::*;
+    pub use metrics::*;
+}
+pub use copilot::billing::{
+    CopilotBilling, CopilotBillingSeats, CopilotSeat, CopilotSeatBreakdown, SeatsCancelled,
+    SeatsCreated,
+};
+pub use copilot::metrics::CopilotMetrics;
+pub mod packages;
 pub mod pulls;
 pub mod reactions;
 pub mod repos;
+pub mod rulesets;
 pub mod search;
+pub mod security_advisories;
 pub mod teams;
 pub mod timelines;
 pub mod webhook_events;
 pub mod workflows;
+
+pub use rulesets::{
+    BypassActorType, BypassMode, PropertyTargetDefinition, RefNameCondition, RepoRule,
+    RepositoryIdCondition, RepositoryNameCondition, RepositoryPropertyCondition, Rule,
+    RuleEvaluation, RuleEvaluationResult, RuleEvaluationSource, RuleSuite, RuleSuiteId,
+    RuleSuiteResult, RuleSuiteSummary, Ruleset, RulesetBypassActor, RulesetConditions,
+    RulesetEnforcement, RulesetId, RulesetLink, RulesetLinks, RulesetSourceType, RulesetTarget,
+    UpdateRuleset,
+};
 
 mod date_serde;
 
@@ -104,26 +202,33 @@ macro_rules! id_type {
 }
 
 id_type!(
+    ActivityId,
     ActorId, // A Bot, EnterpriseUserAccount, Mannequin, Organization or User
     AppId,
     ArtifactId,
     AssetId,
+    AutolinkId,
     BranchProtectionRuleId,
     CardId,
     CheckSuiteId,
     CheckRunId,
     CodeScanningId,
     CommentId,
+    DeploymentId,
+    DeploymentStatusId,
     InstallationId,
+    InvitationId,
     IssueEventId,
     IssueId,
     JobId,
     HookId,
     HookDeliveryId,
+    KeyId,
     LabelId,
     MilestoneId,
     NotificationId,
     OrgId,
+    PageBuildId,
     ProjectId,
     ProjectColumnId,
     PullRequestId,
@@ -145,8 +250,23 @@ id_type!(
     UserOrOrgId,
     WorkflowId,
     TeamInvitationId,
+    TagProtectionId,
     AssignmentId,
-    ClassroomId
+    ClassroomId,
+    EnvironmentId,
+    BranchPolicyId,
+    ProtectionRuleId,
+    OrgRoleId,
+    PatId,
+    PatRequestId,
+    PackageId,
+    PackageVersionId,
+    CodespaceId,
+    MigrationId,
+    ImportAuthorId,
+    InstallationRequestId,
+    PlanId,
+    MarketplaceAccountId
 );
 
 macro_rules! convert_into {
@@ -476,14 +596,7 @@ fn empty_string_is_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Er
 where
     D: Deserializer<'de>,
 {
-    // try to deserialize our input string
-    let cast = String::deserialize(deserializer)?;
-    // if this string is empty then return None
-    if cast.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(cast))
-    }
+    Option::<String>::deserialize(deserializer).map(|opt| opt.filter(|s| !s.is_empty()))
 }
 
 /// The full profile for a user
@@ -920,7 +1033,7 @@ pub struct Repository {
     pub source: Option<Box<Repository>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct MinimalRepository {
     pub allow_forking: Option<bool>,
@@ -1019,7 +1132,7 @@ pub struct MinimalRepository {
     pub web_commit_signoff_required: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct SecurityAndAnalysis {
     /// Enable or disable GitHub Advanced Security for the repository.
@@ -1038,14 +1151,14 @@ pub struct SecurityAndAnalysis {
 /// Enable or disable GitHub Advanced Security for the repository.
 ///
 /// For standalone Code Scanning or Secret Protection products, this parameter cannot be used.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AdvancedSecurity {
     pub status: Option<AdvSecStatus>,
 }
 
 /// The enablement status of Dependabot security updates for the repository.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum AdvSecStatus {
@@ -1053,39 +1166,39 @@ pub enum AdvSecStatus {
     Enabled,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct CodeSecurity {
     pub status: Option<AdvSecStatus>,
 }
 
 /// Enable or disable Dependabot security updates for the repository.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct DependabotSecurityUpdates {
     /// The enablement status of Dependabot security updates for the repository.
     pub status: Option<AdvSecStatus>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct SecretScanning {
     pub status: Option<AdvSecStatus>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct SecretScanningAiDetection {
     pub status: Option<AdvSecStatus>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct SecretScanningNonProviderPatterns {
     pub status: Option<AdvSecStatus>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct SecretScanningPushProtection {
     pub status: Option<AdvSecStatus>,
@@ -1327,6 +1440,8 @@ pub struct InstallationToken {
     pub permissions: InstallationPermissions,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repositories: Option<Vec<Repository>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository_selection: Option<String>,
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
@@ -1369,57 +1484,6 @@ pub struct UserEmailInfo {
     pub primary: bool,
     pub verified: bool,
     pub visibility: Option<EmailVisibilityState>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VerifiedEmailInfo {
-    pub email: String,
-    pub verified: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubKeyInfo {
-    pub id: u64,
-    pub primary_key_id: u64,
-    pub key_id: String,
-    pub public_key: String,
-    pub emails: Vec<VerifiedEmailInfo>,
-    pub subkeys: Option<Vec<SubKeyInfo>>,
-    pub can_sign: bool,
-    pub can_encrypt_comms: bool,
-    pub can_encrypt_storage: bool,
-    pub can_certify: bool,
-    pub created_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expires_at: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub raw_key: Option<String>,
-    pub revoked: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GpgKey {
-    pub id: u64,
-    pub name: String,
-    pub primary_key_id: u64,
-    pub key_id: String,
-    pub public_key: String,
-    pub emails: Vec<VerifiedEmailInfo>,
-    pub subkeys: Vec<SubKeyInfo>,
-    pub can_sign: bool,
-    pub can_encrypt_comms: bool,
-    pub can_encrypt_storage: bool,
-    pub can_certify: bool,
-    pub created_at: DateTime<Utc>,
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        default,
-        deserialize_with = "date_serde::deserialize_opt"
-    )]
-    pub expires_at: Option<DateTime<Utc>>,
-    pub revoked: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub raw_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

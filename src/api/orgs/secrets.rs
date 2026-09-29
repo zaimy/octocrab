@@ -23,8 +23,7 @@ impl<'octo> OrgSecretsHandler<'octo> {
     /// You must authenticate using an access token with the admin:org scope to use this endpoint.
     /// GitHub Apps must have the secrets organization permission to use this endpoint.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let org = octocrab.orgs("owner");
     /// let secrets = org.secrets();
     /// let all_secrets = secrets.get_secrets().await?;
@@ -41,8 +40,7 @@ impl<'octo> OrgSecretsHandler<'octo> {
     // You must authenticate using an access token with the admin:org scope to use this endpoint.
     // GitHub Apps must have the secrets organization permission to use this endpoint.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let org = octocrab.orgs("owner");
     /// let secrets = org.secrets();
     /// let public_key = secrets.get_public_key().await?;
@@ -57,8 +55,7 @@ impl<'octo> OrgSecretsHandler<'octo> {
     /// You must authenticate using an access token with the admin:org scope to use this endpoint.
     /// GitHub Apps must have the secrets organization permission to use this endpoint.
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let org = octocrab.orgs("owner");
     /// let secrets = org.secrets();
     /// let secret_info = secrets.get_secret("TOKEN").await?;
@@ -81,8 +78,7 @@ impl<'octo> OrgSecretsHandler<'octo> {
     /// You must authenticate using an access token with the admin:org scope to use this endpoint.
     /// GitHub Apps must have the secrets organization permission to use this endpoint
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// use octocrab::models::orgs::secrets::{
     ///     CreateOrganizationSecret, CreateOrganizationSecretResponse,
     ///     Visibility
@@ -137,8 +133,7 @@ impl<'octo> OrgSecretsHandler<'octo> {
     /// You must authenticate using an access token with the admin:org scope to use this endpoint.
     /// GitHub Apps must have the secrets organization permission to use this endpoint
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let org = octocrab.orgs("owner");
     /// let secrets = org.secrets();
     ///
@@ -156,5 +151,81 @@ impl<'octo> OrgSecretsHandler<'octo> {
         let resp = self.org.crab._delete(route, None::<&()>).await?;
         crate::map_github_error(resp).await?;
         Ok(())
+    }
+
+    /// Lists selected repositories that have access to an organization secret.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/actions/secrets?apiVersion=2022-11-28#list-selected-repositories-for-an-organization-secret)
+    pub async fn list_selected_repositories(
+        &self,
+        secret_name: impl AsRef<str>,
+    ) -> crate::Result<crate::models::actions::ActionsSelectedRepositories> {
+        let route = format!(
+            "/orgs/{org}/actions/secrets/{secret_name}/repositories",
+            org = self.owner(),
+            secret_name = secret_name.as_ref(),
+        );
+        self.org.crab.get(route, None::<&()>).await
+    }
+
+    /// Sets selected repositories that have access to an organization secret.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/actions/secrets?apiVersion=2022-11-28#set-selected-repositories-for-an-organization-secret)
+    pub async fn set_selected_repositories(
+        &self,
+        secret_name: impl AsRef<str>,
+        selected_repository_ids: &[crate::models::RepositoryId],
+    ) -> crate::Result<()> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            selected_repository_ids: &'a [crate::models::RepositoryId],
+        }
+        let route = format!(
+            "/orgs/{org}/actions/secrets/{secret_name}/repositories",
+            org = self.owner(),
+            secret_name = secret_name.as_ref(),
+        );
+        let body = Body {
+            selected_repository_ids,
+        };
+        crate::map_github_error(self.org.crab._put(route, Some(&body)).await?)
+            .await
+            .map(drop)
+    }
+
+    /// Adds a selected repository to an organization secret.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/actions/secrets?apiVersion=2022-11-28#add-selected-repository-to-an-organization-secret)
+    pub async fn add_selected_repository(
+        &self,
+        secret_name: impl AsRef<str>,
+        repository_id: crate::models::RepositoryId,
+    ) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}",
+            org = self.owner(),
+            secret_name = secret_name.as_ref(),
+        );
+        crate::map_github_error(self.org.crab._put(route, None::<&()>).await?)
+            .await
+            .map(drop)
+    }
+
+    /// Removes a selected repository from an organization secret.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/actions/secrets?apiVersion=2022-11-28#remove-selected-repository-from-an-organization-secret)
+    pub async fn remove_selected_repository(
+        &self,
+        secret_name: impl AsRef<str>,
+        repository_id: crate::models::RepositoryId,
+    ) -> crate::Result<()> {
+        let route = format!(
+            "/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}",
+            org = self.owner(),
+            secret_name = secret_name.as_ref(),
+        );
+        crate::map_github_error(self.org.crab._delete(route, None::<&()>).await?)
+            .await
+            .map(drop)
     }
 }

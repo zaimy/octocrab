@@ -1,6 +1,8 @@
 use serde_json::json;
 
 use crate::models::pulls::Comment;
+use crate::models::reactions::{Reaction, ReactionContent};
+use crate::models::ReactionId;
 
 use super::*;
 
@@ -108,7 +110,22 @@ impl<'octo, 'b> CommentBuilder<'octo, 'b> {
         }
     }
 
-    ///https://docs.github.com/en/rest/pulls/comments?apiVersion=2022-11-28#get-a-review-comment-for-a-pull-request
+    /// Get a review comment for a pull request.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/pulls/comments?apiVersion=2022-11-28#get-a-review-comment-for-a-pull-request)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let comment = octocrab
+    ///     .pulls("owner", "repo")
+    ///     .comment(1u64.into())
+    ///     .get()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get(self) -> crate::Result<Comment> {
         self.handler
             .crab
@@ -124,7 +141,22 @@ impl<'octo, 'b> CommentBuilder<'octo, 'b> {
             .await
     }
 
-    ///https://docs.github.com/en/rest/pulls/comments?apiVersion=2022-11-28#update-a-review-comment-for-a-pull-request
+    /// Update a review comment for a pull request.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/pulls/comments?apiVersion=2022-11-28#update-a-review-comment-for-a-pull-request)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let comment = octocrab
+    ///     .pulls("owner", "repo")
+    ///     .comment(1u64.into())
+    ///     .update("updated comment")
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn update(self, comment: &str) -> crate::Result<Comment> {
         self.handler
             .crab
@@ -140,7 +172,22 @@ impl<'octo, 'b> CommentBuilder<'octo, 'b> {
             .await
     }
 
-    ///https://docs.github.com/en/rest/pulls/comments?apiVersion=2022-11-28#delete-a-review-comment-for-a-pull-request
+    /// Delete a review comment for a pull request.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/pulls/comments?apiVersion=2022-11-28#delete-a-review-comment-for-a-pull-request)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// octocrab
+    ///     .pulls("owner", "repo")
+    ///     .comment(1u64.into())
+    ///     .delete()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn delete(self) -> crate::Result<()> {
         self.handler
             .crab
@@ -155,6 +202,131 @@ impl<'octo, 'b> CommentBuilder<'octo, 'b> {
             )
             .await?;
         Ok(())
+    }
+
+    /// Lists reactions for a pull request review comment.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/reactions/reactions?apiVersion=2022-11-28#list-reactions-for-a-pull-request-review-comment)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let reactions = octocrab
+    ///     .pulls("owner", "repo")
+    ///     .comment(1u64.into())
+    ///     .list_reactions()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn list_reactions(&self) -> ListPullCommentReactionsBuilder<'octo, 'b> {
+        ListPullCommentReactionsBuilder::new(self.handler, self.comment_id)
+    }
+
+    /// Creates a reaction for a pull request review comment.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/reactions/reactions?apiVersion=2022-11-28#create-reaction-for-a-pull-request-review-comment)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// use octocrab::models::reactions::ReactionContent;
+    ///
+    /// let reaction = octocrab
+    ///     .pulls("owner", "repo")
+    ///     .comment(1u64.into())
+    ///     .create_reaction(ReactionContent::PlusOne)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn create_reaction(&self, content: ReactionContent) -> crate::Result<Reaction> {
+        self.handler
+            .create_comment_reaction(self.comment_id, content)
+            .await
+    }
+
+    /// Deletes a reaction for a pull request review comment.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/reactions/reactions?apiVersion=2022-11-28#delete-a-pull-request-comment-reaction)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// octocrab
+    ///     .pulls("owner", "repo")
+    ///     .comment(1u64.into())
+    ///     .delete_reaction(1u64)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn delete_reaction(&self, reaction_id: impl Into<ReactionId>) -> crate::Result<()> {
+        self.handler
+            .delete_comment_reaction(self.comment_id, reaction_id)
+            .await
+    }
+}
+
+/// A builder pattern struct for listing reactions for a pull request review comment.
+///
+/// Created by [`PullRequestHandler::list_comment_reactions`] or [`CommentBuilder::list_reactions`].
+#[derive(serde::Serialize)]
+pub struct ListPullCommentReactionsBuilder<'octo, 'b> {
+    #[serde(skip)]
+    handler: &'b PullRequestHandler<'octo>,
+    #[serde(skip)]
+    comment_id: CommentId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<ReactionContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    per_page: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<u32>,
+}
+
+impl<'octo, 'b> ListPullCommentReactionsBuilder<'octo, 'b> {
+    pub(crate) fn new(handler: &'b PullRequestHandler<'octo>, comment_id: CommentId) -> Self {
+        Self {
+            handler,
+            comment_id,
+            content: None,
+            per_page: None,
+            page: None,
+        }
+    }
+
+    /// Filter reactions by type.
+    pub fn content(mut self, content: ReactionContent) -> Self {
+        self.content = Some(content);
+        self
+    }
+
+    /// Results per page (max 100).
+    pub fn per_page(mut self, per_page: impl Into<u8>) -> Self {
+        self.per_page = Some(per_page.into());
+        self
+    }
+
+    /// Page number of the results to fetch.
+    pub fn page(mut self, page: impl Into<u32>) -> Self {
+        self.page = Some(page.into());
+        self
+    }
+
+    /// Sends the actual request.
+    pub async fn send(self) -> crate::Result<Page<Reaction>> {
+        let route = format!(
+            "/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
+            owner = self.handler.owner,
+            repo = self.handler.repo,
+            comment_id = self.comment_id,
+        );
+        self.handler.crab.get(route, Some(&self)).await
     }
 }
 

@@ -27,8 +27,7 @@ impl<'octo, 'b> ReviewsBuilder<'octo, 'b> {
 
     /// Creates a new `SpecificReviewBuilder`
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// use octocrab::params;
     ///
     /// let _ = octocrab.pulls("owner", "repo")
@@ -50,8 +49,7 @@ impl<'octo, 'b> ReviewsBuilder<'octo, 'b> {
     /// * "Pull requests" repository permissions (write)
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     ///  use octocrab::models::pulls::{ReviewAction, ReviewComment};
     ///
     ///  let _ = octocrab.pulls("owner", "repo")
@@ -76,9 +74,9 @@ impl<'octo, 'b> ReviewsBuilder<'octo, 'b> {
     ) -> crate::Result<crate::models::pulls::Review> {
         let url = format!(
             "/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
-            owner = &self.handler.owner,
-            repo = &self.handler.repo,
-            pull_number = &self.pr_number
+            owner = self.handler.owner,
+            repo = self.handler.repo,
+            pull_number = self.pr_number
         );
         let body = &serde_json::json!({ "body": body.into(), "event": event, "commit_id": commit_id.into(), "comments": comments });
         self.handler.crab.post(url, Some(&body)).await

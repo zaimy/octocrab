@@ -12,29 +12,59 @@
 //! - [`actions`] GitHub Actions
 //! - [`activity`] GitHub Activity
 //! - [`apps`] GitHub Apps
+//! - [`billing`] Billing
 //! - [`checks`] GitHub Checks
+//! - [`classroom`] GitHub Classroom
 //! - [`code_scannings`] Code Scanning
+//! - [`codes_of_conduct`] GitHub Codes of Conduct
+//! - [`codespaces`] GitHub Codespaces
 //! - [`commits`] GitHub Commits
-//! - [`current`] Information about the current user.
+//! - [`copilot`] GitHub Copilot
+//! - [`current`] Information about the current user
+//! - [`dependency_graph`] Dependency Graph
+//! - [`enterprises`] GitHub Enterprises
 //! - [`events`] GitHub Events
+//! - [`gist_comments`] Gist Comments
 //! - [`gists`] Gists
+//! - [`git`] GitHub Git Database API
 //! - [`gitignore`] Gitignore templates
-//! - [`Octocrab::graphql`] GraphQL.
+//! - [`Octocrab::graphql`] GraphQL
+//! - [`hooks`] Webhooks
 //! - [`issues`] Issues and related items, e.g. comments, labels, etc.
-//! - [`licenses`] License Metadata.
+//! - [`licenses`] License Metadata
 //! - [`markdown`] Rendering Markdown with GitHub
+//! - [`marketplace`] GitHub Marketplace
+//! - [`meta`] GitHub Metadata
+//! - [`migrations`] Migrations
 //! - [`orgs`] GitHub Organisations
+//! - [`packages`] GitHub Packages
 //! - [`projects`] GitHub Projects
 //! - [`pulls`] Pull Requests
 //! - [`ratelimit`] Rate Limiting
 //! - [`repos`] Repositories
-//! - [`repos::forks`] Repository forks
-//! - [`repos::releases`] Repository releases
-//! - [`search`] Using GitHub's search.
+//! - [`search`] Using GitHub's search
+//! - [`security_advisories`] Security Advisories
 //! - [`teams`] Teams
 //! - [`users`] Users
-//! - [`classroom`] GitHub Classroom
 //! - [`workflows`] GitHub Workflows
+//!
+//! #### Working with Repositories
+//! ```no_run
+//! # async fn run() -> octocrab::Result<()> {
+//! let octocrab = octocrab::instance();
+//! let repo = octocrab.repos("octocrab", "repo");
+//!
+//! // Fetch repository metadata
+//! let info = repo.get().await?;
+//!
+//! // Check if vulnerability alerts are enabled
+//! let alerts_enabled = repo.vulnerability_alerts().check().await?;
+//!
+//! // List active rules that apply to a branch
+//! let rules = repo.rules_for_branch("main").send().await?;
+//! # Ok(())
+//! # }
+//! ```
 //!
 //! #### Getting a Pull Request
 //! ```no_run
@@ -119,16 +149,14 @@
 //! ```
 //!
 //! You can use the those HTTP methods to easily create your own extensions to
-//! `Octocrab`'s typed API. (Requires `async_trait`).
+//! `Octocrab`'s typed API.
 //! ```
 //! use octocrab::{Octocrab, Page, Result, models};
 //!
-//! #[async_trait::async_trait]
 //! trait OrganisationExt {
 //!   async fn list_every_organisation(&self) -> Result<Page<models::orgs::Organization>>;
 //! }
 //!
-//! #[async_trait::async_trait]
 //! impl OrganisationExt for Octocrab {
 //!   async fn list_every_organisation(&self) -> Result<Page<models::orgs::Organization>> {
 //!     self.get("organizations", None::<&()>).await
@@ -186,19 +214,41 @@
 //! This allows you to write a typesafe application using Rust with
 //! pattern-matching/enum-dispatch to respond to events.
 //!
-//! **Note**: Webhook support in `octocrab` is still beta, not all known webhook events are
-//! strongly typed.
+//! ### Verifying Webhook Signatures
+//! GitHub signs webhook deliveries using an HMAC secret token configured in your
+//! repository or GitHub App settings. The signature is sent in the `X-Hub-Signature-256` HTTP header.
+//!
+//! **Note**: Legacy SHA-1 signatures (`X-Hub-Signature`) are deprecated by GitHub in favor
+//! of HMAC-SHA256 (`X-Hub-Signature-256`). `octocrab` strictly enforces SHA-256 signature
+//! verification.
+//!
+//! You can verify the payload signature before parsing using [`verify_signature`](crate::models::webhook_events::verify_signature)
+//! or [`WebhookVerifier`](crate::models::webhook_events::WebhookVerifier), or perform verification and parsing in one step
+//! with [`WebhookEvent::try_from_header_signature_and_body`](crate::models::webhook_events::WebhookEvent::try_from_header_signature_and_body):
 //!
 //! ```no_run
 //! # use http::request::Request;
 //! # use tracing::{warn, info};
 //! # use octocrab::models::webhook_events::*;
-//! # let request_from_github = Request::post("https://my-webhook-url.com").body(vec![0_u8]).unwrap();
+//! # let request_from_github = Request::post("https://my-webhook-url.com")
+//! #     .header("X-GitHub-Event", "ping")
+//! #     .header("X-Hub-Signature-256", "sha256=...")
+//! #     .body(vec![0_u8]).unwrap();
+//! let webhook_secret = "your-configured-webhook-secret";
+//!
 //! // request_from_github is the HTTP request your webhook handler received
 //! let (parts, body) = request_from_github.into_parts();
-//! let header = parts.headers.get("X-GitHub-Event").unwrap().to_str().unwrap();
+//! let event_header = parts.headers.get("X-GitHub-Event").unwrap().to_str().unwrap();
+//! let signature_header = parts.headers.get("X-Hub-Signature-256").unwrap().to_str().unwrap();
 //!
-//! let event = WebhookEvent::try_from_header_and_body(header, &body).unwrap();
+//! // Verify HMAC-SHA256 signature and deserialize the event
+//! let event = WebhookEvent::try_from_header_signature_and_body(
+//!     event_header,
+//!     signature_header,
+//!     webhook_secret,
+//!     &body,
+//! ).unwrap();
+//!
 //! // Now you can match on event type and call any specific handling logic
 //! match event.kind {
 //!     WebhookEventType::Ping => info!("Received a ping"),
@@ -207,6 +257,9 @@
 //!     _ => warn!("Ignored event"),
 //! };
 //! ```
+//!
+//! **Note**: Webhook support in `octocrab` is still beta, not all known webhook events are
+//! strongly typed.
 #![cfg_attr(test, recursion_limit = "512")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -218,6 +271,7 @@ mod page;
 
 pub mod auth;
 pub mod etag;
+pub mod meta;
 pub mod models;
 pub mod params;
 pub mod service;
@@ -269,7 +323,6 @@ use tower_http::{classify::ServerErrorsFailureClass, map_response_body::MapRespo
 #[cfg(feature = "tracing")]
 use {tower_http::trace::TraceLayer, tracing::Span};
 
-use crate::api::codes_of_conduct;
 use crate::error::{
     HttpSnafu, HyperSnafu, InvalidUtf8Snafu, SerdeSnafu, SerdeUrlEncodedSnafu, ServiceSnafu,
     UriParseError, UriParseSnafu, UriSnafu,
@@ -281,14 +334,20 @@ use crate::service::middleware::extra_headers::ExtraHeadersLayer;
 #[cfg(feature = "retry")]
 use crate::service::middleware::retry::RetryConfig;
 
-use auth::{AppAuth, Auth};
-use models::{AppId, InstallationId, InstallationToken, RepositoryId, UserId};
+#[cfg(feature = "jwt")]
+use auth::AppAuth;
+use auth::Auth;
+#[cfg(feature = "jwt")]
+use models::{AppId, InstallationId, InstallationToken};
+use models::{RepositoryId, UserId};
 
 pub use self::{
     api::{
-        actions, activity, apps, checks, classroom, code_scannings, commits, current, events,
-        gists, gitignore, hooks, issues, licenses, markdown, orgs, projects, pulls, ratelimit,
-        repos, search, teams, users, workflows,
+        actions, activity, apps, billing, checks, classroom, code_scannings, codes_of_conduct,
+        codespaces, commits, copilot, current, dependency_graph, enterprises, events,
+        gist_comments, gists, git, gitignore, hooks, issues, licenses, markdown, marketplace,
+        migrations, orgs, packages, projects, pulls, ratelimit, repos, search, security_advisories,
+        teams, users, workflows,
     },
     error::{Error, GitHubError},
     from_response::FromResponse,
@@ -300,8 +359,13 @@ compile_error!(
     "feature \"jwt-rust-crypto\" and feature \"jwt-aws-lc-rs\" cannot be enabled at the same time"
 );
 
-#[cfg(not(any(feature = "jwt-rust-crypto", feature = "jwt-aws-lc-rs")))]
-compile_error!("at least one of the features \"jwt-rust-crypto\" and feature \"jwt-aws-lc-rs\" must be enabled");
+#[cfg(all(
+    feature = "jwt",
+    not(any(feature = "jwt-rust-crypto", feature = "jwt-aws-lc-rs"))
+))]
+compile_error!(
+    "feature \"jwt\" requires either \"jwt-aws-lc-rs\" or \"jwt-rust-crypto\" to be enabled"
+);
 
 /// A convenience type with a default error type of [`Error`].
 pub type Result<T, E = error::Error> = std::result::Result<T, E>;
@@ -352,7 +416,7 @@ pub fn format_media_type(media_type: impl AsRef<str>) -> String {
 struct GitHubErrorBody {
     pub documentation_url: Option<String>,
     pub errors: Option<Vec<serde_json::Value>>,
-    pub message: String,
+    pub message: Option<String>,
 }
 
 /// Maps a GitHub error response into and `Err()` variant if the status is
@@ -364,12 +428,45 @@ pub async fn map_github_error(
         Ok(response)
     } else {
         let (parts, body) = response.into_parts();
-        let GitHubErrorBody {
-            documentation_url,
-            errors,
-            message,
-        } = serde_json::from_slice(body.collect().await?.to_bytes().as_ref())
-            .context(error::SerdeSnafu)?;
+        let bytes = body.collect().await?.to_bytes();
+
+        let (documentation_url, errors, message) =
+            match serde_json::from_slice::<GitHubErrorBody>(&bytes) {
+                Ok(body) => {
+                    let message = body.message.unwrap_or_else(|| {
+                        let body_str = String::from_utf8_lossy(&bytes).trim().to_string();
+                        if body_str.is_empty() {
+                            parts
+                                .status
+                                .canonical_reason()
+                                .unwrap_or("Unknown HTTP Error")
+                                .to_string()
+                        } else {
+                            body_str
+                        }
+                    });
+                    (body.documentation_url, body.errors, message)
+                }
+                Err(_) => {
+                    let body_str = String::from_utf8_lossy(&bytes).trim().to_string();
+                    let message = if body_str.is_empty() {
+                        parts
+                            .status
+                            .canonical_reason()
+                            .unwrap_or("Unknown HTTP Error")
+                            .to_string()
+                    } else {
+                        body_str
+                    };
+                    (None, None, message)
+                }
+            };
+
+        let rate_limit_reset = parts
+            .headers
+            .get("x-ratelimit-reset")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
 
         Err(error::Error::GitHub {
             source: Box::new(GitHubError {
@@ -377,6 +474,8 @@ pub async fn map_github_error(
                 documentation_url,
                 errors,
                 message,
+                rate_limit_reset,
+                headers: Some(parts.headers),
             }),
             backtrace: Backtrace::capture(),
         })
@@ -587,6 +686,46 @@ impl<Svc, Config, LayerState> OctocrabBuilder<Svc, Config, NoAuth, LayerState> {
     }
 }
 
+#[cfg(all(feature = "rustls", not(feature = "opentls")))]
+fn default_rustls_crypto_provider() -> Arc<rustls::crypto::CryptoProvider> {
+    #[cfg(feature = "rustls-aws-lc-rs")]
+    {
+        Arc::new(rustls::crypto::aws_lc_rs::default_provider())
+    }
+    #[cfg(all(feature = "rustls-ring", not(feature = "rustls-aws-lc-rs")))]
+    {
+        Arc::new(rustls::crypto::ring::default_provider())
+    }
+    #[cfg(not(any(feature = "rustls-aws-lc-rs", feature = "rustls-ring")))]
+    {
+        compile_error!(
+            "the `rustls` feature requires one of the `rustls-ring` or `rustls-aws-lc-rs` features to be enabled"
+        )
+    }
+}
+
+/// Which [`reqwest::Client`] [`OctocrabBuilder::build_with_reqwest`] should
+/// use.
+#[cfg(feature = "reqwest")]
+#[cfg_attr(docsrs, doc(cfg(feature = "reqwest")))]
+pub enum ReqwestClientConfig {
+    /// Build a fresh [`reqwest::Client`], honoring this builder's
+    /// `set_connect_timeout`/`set_read_timeout` settings (see
+    /// [`OctocrabBuilder::set_connect_timeout`] and
+    /// [`OctocrabBuilder::set_read_timeout`]). Note that `reqwest` has no
+    /// separate write timeout, so `set_write_timeout` is not applied here.
+    Default,
+    /// Use this caller-provided, already-configured [`reqwest::Client`].
+    Custom(reqwest::Client),
+}
+
+#[cfg(feature = "reqwest")]
+impl From<reqwest::Client> for ReqwestClientConfig {
+    fn from(client: reqwest::Client) -> Self {
+        Self::Custom(client)
+    }
+}
+
 impl OctocrabBuilder<NoSvc, DefaultOctocrabBuilderConfig, NoAuth, NotLayerReady> {
     /// Set the retry configuration
     #[cfg(feature = "retry")]
@@ -640,6 +779,8 @@ impl OctocrabBuilder<NoSvc, DefaultOctocrabBuilderConfig, NoAuth, NotLayerReady>
 
     /// Authenticate as a Github App.
     /// `key`: RSA private key in DER or PEM formats.
+    #[cfg(feature = "jwt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jwt")))]
     pub fn app(mut self, app_id: AppId, key: jsonwebtoken::EncodingKey) -> Self {
         self.config.auth = Auth::App(AppAuth { app_id, key });
         self
@@ -733,11 +874,19 @@ impl OctocrabBuilder<NoSvc, DefaultOctocrabBuilderConfig, NoAuth, NotLayerReady>
             #[cfg(all(feature = "rustls", not(feature = "opentls")))]
             let connector = {
                 let builder = HttpsConnectorBuilder::new();
+                // Allow user to have installed a runtime default.
+                // If not, we ship with _our_ recommended default.
+                let provider = rustls::crypto::CryptoProvider::get_default()
+                    .cloned()
+                    .unwrap_or_else(default_rustls_crypto_provider);
                 #[cfg(feature = "rustls-webpki-tokio")]
-                let builder = builder.with_webpki_roots();
+                let builder = builder
+                    .with_provider_and_webpki_roots(provider)
+                    .map_err(Into::into)
+                    .context(error::OtherSnafu)?;
                 #[cfg(not(feature = "rustls-webpki-tokio"))]
                 let builder = builder
-                    .with_native_roots()
+                    .with_provider_and_native_roots(provider)
                     .map_err(Into::into)
                     .context(error::OtherSnafu)?; // enabled the `rustls-native-certs` feature in hyper-rustls
 
@@ -814,19 +963,212 @@ impl OctocrabBuilder<NoSvc, DefaultOctocrabBuilderConfig, NoAuth, NotLayerReady>
         #[cfg(feature = "follow-redirect")]
         let client = tower_http::follow_redirect::FollowRedirectLayer::new().layer(client);
 
+        let executor = self.executor;
+        let PreparedConfig {
+            extra_headers,
+            auth_header,
+            auth_state,
+            base_uri,
+            upload_uri,
+            cache_storage,
+        } = Self::prepare_config(self.config)?;
+
+        let client = ExtraHeadersLayer::new(Arc::new(extra_headers)).layer(client);
+
+        let client = MapResponseBodyLayer::new(|body| {
+            BodyExt::map_err(body, |e| HyperSnafu.into_error(e)).boxed()
+        })
+        .layer(client);
+
+        let client = BaseUriLayer::new(base_uri.clone()).layer(client);
+
+        let client = AuthHeaderLayer::new(auth_header, base_uri, upload_uri).layer(client);
+
+        let client = HttpCacheLayer::new(cache_storage).layer(client);
+
+        if let Some(executor) = executor {
+            return Ok(Octocrab::new_with_executor(client, auth_state, executor));
+        }
+
+        Ok(Octocrab::new(client, auth_state))
+    }
+
+    /// Build an [`Octocrab`] instance backed by [`reqwest::Client`] instead
+    /// of the default `hyper`-based client.
+    ///
+    /// This routes requests through the same Tower middleware stack as
+    /// [`Self::build`] (retries, tracing, extra headers, base URI rewriting,
+    /// auth headers, and HTTP caching), but executes them with `reqwest`.
+    /// This is useful when you want `reqwest`'s HTTP/proxy handling, e.g. to
+    /// pick up the `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment
+    /// variables, or an explicit [`reqwest::Proxy`], while still keeping
+    /// Octocrab's authentication, retry, and caching behavior.
+    ///
+    /// Accepts a [`ReqwestClientConfig`], or (via [`Into`]) a
+    /// caller-provided [`reqwest::Client`] directly:
+    /// - [`ReqwestClientConfig::Default`] builds a fresh [`reqwest::Client`],
+    ///   honoring this builder's [`Self::set_connect_timeout`] and
+    ///   [`Self::set_read_timeout`] settings (there is no equivalent for
+    ///   [`Self::set_write_timeout`], since `reqwest` has no separate write
+    ///   timeout).
+    /// - [`ReqwestClientConfig::Custom`] (or simply passing a
+    ///   [`reqwest::Client`]) uses your own, already-configured client,
+    ///   e.g. with a custom [`reqwest::Proxy`] or TLS settings. This
+    ///   builder's timeout settings are ignored in this case; configure
+    ///   them directly on the [`reqwest::ClientBuilder`] instead.
+    ///
+    /// This method is purely additive: it does not change the behavior of
+    /// [`Self::build`], and existing code is unaffected.
+    /// ```no_run
+    /// # async fn run() -> octocrab::Result<()> {
+    /// // Using a default client (respects `set_connect_timeout`/`set_read_timeout`):
+    /// let octocrab = octocrab::Octocrab::builder()
+    ///     .personal_token(String::from("token"))
+    ///     .build_with_reqwest(octocrab::ReqwestClientConfig::Default)?;
+    ///
+    /// // Using a custom client, e.g. with a proxy:
+    /// let http_client = reqwest::Client::builder()
+    ///     // e.g. `.proxy(reqwest::Proxy::all("https://my-proxy:8080")?)`
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let octocrab = octocrab::Octocrab::builder()
+    ///     .personal_token(String::from("token"))
+    ///     .build_with_reqwest(http_client)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "reqwest")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "reqwest")))]
+    pub fn build_with_reqwest(self, client: impl Into<ReqwestClientConfig>) -> Result<Octocrab> {
+        use crate::service::middleware::reqwest_connector::ReqwestConnector;
+
+        let http_client = match client.into() {
+            ReqwestClientConfig::Custom(client) => client,
+            ReqwestClientConfig::Default => {
+                let mut builder = reqwest::Client::builder();
+
+                #[cfg(feature = "timeout")]
+                {
+                    if let Some(connect_timeout) = self.config.connect_timeout {
+                        builder = builder.connect_timeout(connect_timeout);
+                    }
+                    if let Some(read_timeout) = self.config.read_timeout {
+                        builder = builder.read_timeout(read_timeout);
+                    }
+                }
+
+                builder
+                    .build()
+                    .map_err(Into::into)
+                    .context(error::OtherSnafu)?
+            }
+        };
+
+        let client = ReqwestConnector::new(http_client);
+
+        #[cfg(feature = "retry")]
+        let client = RetryLayer::new(self.config.retry_config.clone()).layer(client);
+
+        #[cfg(feature = "tracing")]
+        let client = TraceLayer::new_for_http()
+            .make_span_with(|req: &Request<OctoBody>| {
+                tracing::debug_span!(
+                    "HTTP",
+                     http.method = %req.method(),
+                     http.url = %req.uri(),
+                     http.status_code = tracing::field::Empty,
+                     otel.name = req.extensions().get::<&'static str>().unwrap_or(&"HTTP"),
+                     otel.kind = "client",
+                     otel.status_code = tracing::field::Empty,
+                )
+            })
+            .on_request(|_req: &Request<OctoBody>, _span: &Span| {
+                tracing::debug!("requesting");
+            })
+            .on_response(
+                |res: &Response<BoxBody<Bytes, crate::Error>>, _latency: Duration, span: &Span| {
+                    let status = res.status();
+                    span.record("http.status_code", status.as_u16());
+                    if status.is_client_error() || status.is_server_error() {
+                        span.record("otel.status_code", "ERROR");
+                    }
+                },
+            )
+            // Explicitly disable `on_body_chunk`. The default does nothing.
+            .on_body_chunk(())
+            .on_eos(|_: Option<&HeaderMap>, _duration: Duration, _span: &Span| {
+                tracing::debug!("stream closed");
+            })
+            .on_failure(
+                |ec: ServerErrorsFailureClass, _latency: Duration, span: &Span| {
+                    span.record("otel.status_code", "ERROR");
+                    match ec {
+                        ServerErrorsFailureClass::StatusCode(status) => {
+                            span.record("http.status_code", status.as_u16());
+                            tracing::error!("failed with status {}", status)
+                        }
+                        ServerErrorsFailureClass::Error(err) => {
+                            tracing::error!("failed with error {}", err)
+                        }
+                    }
+                },
+            )
+            .layer(client);
+
+        // `TraceLayer` wraps the response body for per-frame instrumentation
+        // (`on_body_chunk`/`on_eos`). Box it back down into a plain
+        // `BoxBody<Bytes, crate::Error>` so that the remaining layers (which
+        // are agnostic to which leaf transport produced the response) see
+        // the same body type used throughout the rest of Octocrab's Tower
+        // stack.
+        #[cfg(feature = "tracing")]
+        let client = MapResponseBodyLayer::new(|body| BodyExt::boxed(body)).layer(client);
+
+        #[cfg(feature = "follow-redirect")]
+        let client = tower_http::follow_redirect::FollowRedirectLayer::new().layer(client);
+
+        let executor = self.executor;
+        let PreparedConfig {
+            extra_headers,
+            auth_header,
+            auth_state,
+            base_uri,
+            upload_uri,
+            cache_storage,
+        } = Self::prepare_config(self.config)?;
+
+        let client = ExtraHeadersLayer::new(Arc::new(extra_headers)).layer(client);
+
+        let client = BaseUriLayer::new(base_uri.clone()).layer(client);
+
+        let client = AuthHeaderLayer::new(auth_header, base_uri, upload_uri).layer(client);
+
+        let client = HttpCacheLayer::new(cache_storage).layer(client);
+
+        if let Some(executor) = executor {
+            return Ok(Octocrab::new_with_executor(client, auth_state, executor));
+        }
+
+        Ok(Octocrab::new(client, auth_state))
+    }
+
+    /// Computes the extra headers, auth header/state, and base/upload URIs
+    /// shared by [`Self::build`] and [`Self::build_with_reqwest`].
+    fn prepare_config(config: DefaultOctocrabBuilderConfig) -> Result<PreparedConfig> {
         let mut hmap: Vec<(HeaderName, HeaderValue)> = vec![];
 
         // Add the user agent header required by GitHub
         hmap.push((USER_AGENT, HeaderValue::from_str("octocrab").unwrap()));
 
-        for preview in &self.config.previews {
+        for preview in &config.previews {
             hmap.push((
                 http::header::ACCEPT,
                 HeaderValue::from_str(crate::format_preview(preview).as_str()).unwrap(),
             ));
         }
 
-        let (auth_header, auth_state): (Option<HeaderValue>, _) = match self.config.auth {
+        let (auth_header, auth_state): (Option<HeaderValue>, _) = match config.auth {
             Auth::None => (None, AuthState::None),
             Auth::Basic { username, password } => {
                 (None, AuthState::BasicAuth { username, password })
@@ -839,13 +1181,14 @@ impl OctocrabBuilder<NoSvc, DefaultOctocrabBuilderConfig, NoAuth, NotLayerReady>
                 Some(format!("Bearer {}", token.expose_secret()).parse().unwrap()),
                 AuthState::None,
             ),
+            #[cfg(feature = "jwt")]
             Auth::App(app_auth) => (None, AuthState::App(app_auth)),
             Auth::OAuth(device) => (
                 Some(
                     format!(
                         "{} {}",
                         device.token_type,
-                        &device.access_token.expose_secret()
+                        device.access_token.expose_secret()
                     )
                     .parse()
                     .unwrap(),
@@ -854,7 +1197,7 @@ impl OctocrabBuilder<NoSvc, DefaultOctocrabBuilderConfig, NoAuth, NotLayerReady>
             ),
         };
 
-        for (key, value) in self.config.extra_headers.iter() {
+        for (key, value) in config.extra_headers.iter() {
             hmap.push((
                 key.clone(),
                 HeaderValue::from_str(value.as_str())
@@ -863,37 +1206,36 @@ impl OctocrabBuilder<NoSvc, DefaultOctocrabBuilderConfig, NoAuth, NotLayerReady>
             ));
         }
 
-        let client = ExtraHeadersLayer::new(Arc::new(hmap)).layer(client);
-
-        let client = MapResponseBodyLayer::new(|body| {
-            BodyExt::map_err(body, |e| HyperSnafu.into_error(e)).boxed()
-        })
-        .layer(client);
-
-        let base_uri = self
-            .config
+        let base_uri = config
             .base_uri
             .clone()
             .unwrap_or_else(|| Uri::from_str(GITHUB_BASE_URI).unwrap());
 
-        let upload_uri = self
-            .config
+        let upload_uri = config
             .upload_uri
             .clone()
             .unwrap_or_else(|| Uri::from_str(GITHUB_BASE_UPLOAD_URI).unwrap());
 
-        let client = BaseUriLayer::new(base_uri.clone()).layer(client);
-
-        let client = AuthHeaderLayer::new(auth_header, base_uri, upload_uri).layer(client);
-
-        let client = HttpCacheLayer::new(self.config.cache_storage.clone()).layer(client);
-
-        if let Some(executor) = self.executor {
-            return Ok(Octocrab::new_with_executor(client, auth_state, executor));
-        }
-
-        Ok(Octocrab::new(client, auth_state))
+        Ok(PreparedConfig {
+            extra_headers: hmap,
+            auth_header,
+            auth_state,
+            base_uri,
+            upload_uri,
+            cache_storage: config.cache_storage.clone(),
+        })
     }
+}
+
+/// Intermediate result of [`OctocrabBuilder::prepare_config`], shared
+/// between [`OctocrabBuilder::build`] and [`OctocrabBuilder::build_with_reqwest`].
+struct PreparedConfig {
+    extra_headers: Vec<(HeaderName, HeaderValue)>,
+    auth_header: Option<HeaderValue>,
+    auth_state: AuthState,
+    base_uri: Uri,
+    upload_uri: Uri,
+    cache_storage: Option<Arc<dyn CacheStorage>>,
 }
 
 pub struct DefaultOctocrabBuilderConfig {
@@ -947,10 +1289,12 @@ struct CachedTokenInner {
 }
 
 impl CachedTokenInner {
+    #[allow(dead_code)]
     fn new(secret: SecretString, expiration: Option<DateTime<Utc>>) -> Self {
         Self { secret, expiration }
     }
 
+    #[allow(dead_code)]
     fn expose_secret(&self) -> &str {
         self.secret.expose_secret()
     }
@@ -960,11 +1304,13 @@ impl CachedTokenInner {
 pub struct CachedToken(RwLock<Option<CachedTokenInner>>);
 
 impl CachedToken {
+    #[allow(dead_code)]
     fn clear(&self) {
         *self.0.write().unwrap() = None;
     }
 
     /// Returns a valid token if it exists and is not expired or if there is no expiration date.
+    #[allow(dead_code)]
     fn valid_token_with_buffer(&self, buffer: chrono::Duration) -> Option<SecretString> {
         let inner = self.0.read().unwrap();
 
@@ -981,10 +1327,12 @@ impl CachedToken {
         None
     }
 
+    #[allow(dead_code)]
     fn valid_token(&self) -> Option<SecretString> {
         self.valid_token_with_buffer(chrono::Duration::seconds(30))
     }
 
+    #[allow(dead_code)]
     fn set<S: Into<SecretString>>(&self, token: S, expiration: Option<DateTime<Utc>>) {
         *self.0.write().unwrap() = Some(CachedTokenInner::new(token.into(), expiration));
     }
@@ -1032,8 +1380,12 @@ pub enum AuthState {
         password: String,
     },
     /// Github App authentication with the given app data
+    #[cfg(feature = "jwt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jwt")))]
     App(AppAuth),
     /// Authentication via a Github App repo-specific installation
+    #[cfg(feature = "jwt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jwt")))]
     Installation {
         /// The app authentication data (app ID and private key)
         app: AppAuth,
@@ -1190,6 +1542,8 @@ impl Octocrab {
     /// then obtain an installation ID, and then pass that here to
     /// obtain a new `Octocrab` with which you can make API calls
     /// with the permissions of that installation.
+    #[cfg(feature = "jwt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jwt")))]
     pub fn installation(&self, id: InstallationId) -> Result<Octocrab> {
         self.installation_builder(id).build()
     }
@@ -1212,6 +1566,8 @@ impl Octocrab {
     /// has access to.
     ///
     /// See also <https://docs.github.com/en/developers/apps/building-github-apps/authenticating-with-github-apps#http-based-git-access-by-an-installation>
+    #[cfg(feature = "jwt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jwt")))]
     pub async fn installation_and_token(
         &self,
         id: InstallationId,
@@ -1225,6 +1581,8 @@ impl Octocrab {
     /// at least 30 seconds. A cached token will be used if its expiration is
     /// far enough in the future. Otherwise, a new token will be acquired and
     /// cached.
+    #[cfg(feature = "jwt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jwt")))]
     pub async fn installation_token(&self) -> Result<SecretString> {
         self.installation_token_with_buffer(chrono::Duration::seconds(30))
             .await
@@ -1234,6 +1592,8 @@ impl Octocrab {
     /// at least the duration specified by [`buffer`]. A cached token will be
     /// used if its expiration is far enough in the future. Otherwise, a new
     /// token will be acquired and cached.
+    #[cfg(feature = "jwt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jwt")))]
     pub async fn installation_token_with_buffer(
         &self,
         buffer: chrono::Duration,
@@ -1282,6 +1642,24 @@ impl Octocrab {
         current::CurrentAuthHandler::new(self)
     }
 
+    /// Creates a [`codespaces::CodespacesHandler`] that allows you to access
+    /// GitHub's Codespaces API for the authenticated user.
+    pub fn codespaces(&self) -> codespaces::CodespacesHandler<'_> {
+        codespaces::CodespacesHandler::new(self)
+    }
+
+    /// Creates a [`migrations::MigrationsHandler`] that allows you to access
+    /// GitHub's Migrations API.
+    pub fn migrations(&self) -> migrations::MigrationsHandler<'_> {
+        migrations::MigrationsHandler::new(self)
+    }
+
+    /// Creates a [`copilot::CopilotHandler`] that allows you to access
+    /// GitHub's Copilot API.
+    pub fn copilot(&self) -> copilot::CopilotHandler<'_> {
+        copilot::CopilotHandler::new(self)
+    }
+
     /// Creates a [`activity::ActivityHandler`] for the current authenticated user.
     pub fn activity(&self) -> activity::ActivityHandler<'_> {
         activity::ActivityHandler::new(self)
@@ -1292,10 +1670,26 @@ impl Octocrab {
         apps::AppsRequestHandler::new(self)
     }
 
+    /// Creates a [`marketplace::MarketplaceHandler`] for accessing GitHub Marketplace API.
+    pub fn marketplace(&self) -> marketplace::MarketplaceHandler<'_> {
+        marketplace::MarketplaceHandler::new(self)
+    }
+
+    /// Creates an [`apps::ApplicationHandler`] for managing OAuth application authorizations.
+    pub fn applications(&self, client_id: impl Into<String>) -> apps::ApplicationHandler<'_> {
+        apps::ApplicationHandler::new(self, client_id.into())
+    }
+
     /// Creates a [`gitignore::GitignoreHandler`] for accessing information
     /// about `gitignore`.
     pub fn gitignore(&self) -> gitignore::GitignoreHandler<'_> {
         gitignore::GitignoreHandler::new(self)
+    }
+
+    /// Creates a [`meta::MetaHandler`] for accessing information
+    /// about the GitHub metadata API.
+    pub fn meta(&self) -> meta::MetaHandler<'_> {
+        meta::MetaHandler::new(self)
     }
 
     /// Creates a [`issues::IssueHandler`] for the repo specified at `owner/repo`,
@@ -1312,6 +1706,14 @@ impl Octocrab {
     /// that allows you to access GitHub's issues API.
     pub fn issues_by_id(&self, id: impl Into<RepositoryId>) -> issues::IssueHandler<'_> {
         issues::IssueHandler::new(self, RepoRef::ById(id.into()))
+    }
+
+    /// List issues assigned to the authenticated user across all visible repositories
+    /// including owned repositories, member repositories, and organization repositories.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-issues-assigned-to-the-authenticated-user)
+    pub fn all_issues(&self) -> current::ListAllIssuesBuilder<'_, '_> {
+        current::ListAllIssuesBuilder::new(self)
     }
 
     /// Creates a [`code_scannings::CodeScanningHandler`] for the repo specified at `owner/repo`,
@@ -1333,7 +1735,35 @@ impl Octocrab {
         code_scannings::CodeScanningHandler::new(self, owner.into(), None)
     }
 
+    /// Creates a [`dependency_graph::RepoDependencyGraphHandler`] for the repo specified at `owner/repo`,
+    /// that allows you to access GitHub's Dependency Graph API.
+    pub fn dependency_graph(
+        &self,
+        owner: impl Into<String>,
+        repo: impl Into<String>,
+    ) -> dependency_graph::RepoDependencyGraphHandler<'_> {
+        self.repos(owner, repo).dependency_graph()
+    }
+
     /// Creates a [`commits::CommitHandler`] for the repo specified at `owner/repo`,
+    /// that allows you to access GitHub's commits API (getting commits, comparing
+    /// commits, listing branches for HEAD commit, and managing commit comments).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run() -> octocrab::Result<()> {
+    /// let octocrab = octocrab::instance();
+    /// let commits = octocrab.commits("owner", "repo");
+    ///
+    /// // Compare two commits
+    /// let comparison = commits.compare("base-sha", "head-sha").send().await?;
+    ///
+    /// // List branches where a commit is the HEAD
+    /// let branches = commits.branches_where_head("commit-sha").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn commits(
         &self,
         owner: impl Into<String>,
@@ -1352,8 +1782,18 @@ impl Octocrab {
         markdown::MarkdownHandler::new(self)
     }
 
+    /// Creates an [`enterprises::EnterpriseHandler`] for the specified enterprise,
+    /// that allows you to access GitHub's enterprise API.
+    pub fn enterprises(&self, enterprise: impl Into<String>) -> enterprises::EnterpriseHandler<'_> {
+        enterprises::EnterpriseHandler::new(self, enterprise.into())
+    }
+
     /// Creates an [`orgs::OrgHandler`] for the specified organization,
     /// that allows you to access GitHub's organization API.
+    ///
+    /// Provides access to organization webhooks, custom properties, organization roles,
+    /// invitations, fine-grained personal access tokens, public members, outside collaborators,
+    /// blocked users, security managers, security products enablement, app installations, and more.
     pub fn orgs(&self, owner: impl Into<String>) -> orgs::OrgHandler<'_> {
         orgs::OrgHandler::new(self, owner.into())
     }
@@ -1370,6 +1810,30 @@ impl Octocrab {
 
     /// Creates a [`repos::RepoHandler`] for the repo specified at `owner/repo`,
     /// that allows you to access GitHub's repository API.
+    ///
+    /// Provides access to branches and branch protection, repository rulesets,
+    /// deployment environments, webhooks, security and vulnerability alerts,
+    /// traffic statistics, GitHub Pages, deploy keys, autolinks, custom properties,
+    /// commit comments, repository transfer, archive downloads, and more.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run() -> octocrab::Result<()> {
+    /// let octocrab = octocrab::instance();
+    /// let repo = octocrab.repos("owner", "repo");
+    ///
+    /// // Get repository metadata
+    /// let data = repo.get().await?;
+    ///
+    /// // Access branch protection rules
+    /// let protection = repo.branches().protection("main").get().await?;
+    ///
+    /// // Check Dependabot vulnerability alerts
+    /// let alerts_enabled = repo.vulnerability_alerts().check().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn repos(
         &self,
         owner: impl Into<String>,
@@ -1380,8 +1844,84 @@ impl Octocrab {
 
     /// Creates a [`repos::RepoHandler`] for the repo specified at repository ID,
     /// that allows you to access GitHub's repository API.
+    ///
+    /// See [`Octocrab::repos`] for details on available repository operations.
     pub fn repos_by_id(&self, id: impl Into<RepositoryId>) -> repos::RepoHandler<'_> {
         repos::RepoHandler::new(self, RepoRef::ById(id.into()))
+    }
+
+    /// Creates a [`git::GitHandler`] for the repo specified at `owner/repo`,
+    /// that allows you to access GitHub's Git database API.
+    ///
+    /// Provides access to Git blobs, commits, references, tags, and trees.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let master = octocrab
+    ///     .git("owner", "repo")
+    ///     .get_ref(&octocrab::params::repos::Reference::Branch("master".to_string()))
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn git(&self, owner: impl Into<String>, repo: impl Into<String>) -> git::GitHandler<'_> {
+        git::GitHandler::new(self, RepoRef::ByOwnerAndName(owner.into(), repo.into()))
+    }
+
+    /// Creates a [`git::GitHandler`] for the repo specified at repository ID,
+    /// that allows you to access GitHub's Git database API.
+    ///
+    /// See [`Octocrab::git`] for details on available Git database operations.
+    pub fn git_by_id(&self, id: impl Into<RepositoryId>) -> git::GitHandler<'_> {
+        git::GitHandler::new(self, RepoRef::ById(id.into()))
+    }
+
+    /// List all public repositories in the order that they were created.
+    ///
+    /// Pagination is controlled by the `since` parameter specifying the integer ID
+    /// of the last repository seen, returning a [`Page<models::Repository>`].
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#list-public-repositories)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run() -> octocrab::Result<()> {
+    /// let octocrab = octocrab::instance();
+    /// let page = octocrab.all_repositories().since(1000u64).send().await?;
+    /// for repo in page {
+    ///     println!("Repository: {}", repo.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn all_repositories(&self) -> repos::ListAllRepositoriesBuilder<'_> {
+        repos::ListAllRepositoriesBuilder::new(self)
+    }
+
+    /// List all public repositories in the order that they were created (alias for [`all_repositories`][Octocrab::all_repositories]).
+    pub fn repositories(&self) -> repos::ListAllRepositoriesBuilder<'_> {
+        self.all_repositories()
+    }
+
+    /// Creates a [`billing::BillingHandler`] providing GitHub's Billing API.
+    ///
+    /// You can scope to an organization or user using [`.org()`][billing::BillingHandler::org]
+    /// or [`.user()`][billing::BillingHandler::user], or via [`Octocrab::orgs`] or [`Octocrab::users`].
+    pub fn billing(&self) -> billing::BillingHandler<'_> {
+        billing::BillingHandler::new(self)
+    }
+
+    /// Creates a [`packages::PackagesHandler`] providing GitHub's Packages API.
+    ///
+    /// By default, operations are scoped to the authenticated user (`/user`).
+    /// You can scope to an organization or user using [`.org()`][packages::PackagesHandler::org]
+    /// or [`.user()`][packages::PackagesHandler::user], or via [`Octocrab::orgs`], [`Octocrab::users`],
+    /// or [`Octocrab::current`].
+    pub fn packages(&self) -> packages::PackagesHandler<'_> {
+        packages::PackagesHandler::new(self, packages::PackagesOwner::AuthenticatedUser)
     }
 
     /// Creates a [`projects::ProjectHandler`] that allows you to access GitHub's
@@ -1400,6 +1940,16 @@ impl Octocrab {
     /// you to access GitHub's teams API.
     pub fn teams(&self, owner: impl Into<String>) -> teams::TeamHandler<'_> {
         teams::TeamHandler::new(self, owner.into())
+    }
+
+    /// Creates a [`teams::TeamByIdHandler`] for the specified team ID that allows
+    /// you to access GitHub's teams API by team ID.
+    #[allow(deprecated)]
+    #[deprecated(
+        note = "Team Discussions have been deprecated and sunset by GitHub. Use teams(owner) instead."
+    )]
+    pub fn teams_by_id(&self, team_id: impl Into<models::TeamId>) -> teams::TeamByIdHandler<'_> {
+        teams::TeamByIdHandler::new(self, team_id.into())
     }
 
     /// Creates a [`users::UserHandler`] for the specified user using the user name
@@ -1466,6 +2016,11 @@ impl Octocrab {
     /// Creates a [`codes_of_conduct::CodesOfConductHandler`] providing the GitHub Codes of Codes of Conduct API
     pub fn codes_of_conduct(&self) -> codes_of_conduct::CodesOfConductHandler<'_> {
         codes_of_conduct::CodesOfConductHandler::new(self)
+    }
+
+    /// Creates a [`security_advisories::SecurityAdvisoriesHandler`] providing GitHub's Security Advisories API.
+    pub fn security_advisories(&self) -> security_advisories::SecurityAdvisoriesHandler<'_> {
+        security_advisories::SecurityAdvisoriesHandler::new(self)
     }
 }
 
@@ -1804,6 +2359,7 @@ impl Octocrab {
     }
 
     /// Requests a fresh installation auth token and caches it. Returns the token.
+    #[cfg(feature = "jwt")]
     async fn request_installation_auth_token(&self) -> Result<SecretString> {
         let (app, installation, token, repositories, repository_ids) =
             if let AuthState::Installation {
@@ -1905,6 +2461,7 @@ impl Octocrab {
         // Saved request that we can retry later if necessary
         let auth_header: Option<HeaderValue> = match self.auth_state {
             AuthState::None => None,
+            #[cfg(feature = "jwt")]
             AuthState::App(ref app) => Some(
                 HeaderValue::from_str(format!("Bearer {}", app.generate_bearer_token()?).as_str())
                     .map_err(http::Error::from)
@@ -1925,6 +2482,7 @@ impl Octocrab {
                 }
                 Some(HeaderValue::from_bytes(&buf).expect("base64 is always valid HeaderValue"))
             }
+            #[cfg(feature = "jwt")]
             AuthState::Installation { ref token, .. } => {
                 let token = if let Some(token) = token.valid_token() {
                     token
@@ -1973,8 +2531,8 @@ impl Octocrab {
 
         let response = self.send(request).await?;
 
-        let status = response.status();
-        if StatusCode::UNAUTHORIZED == status {
+        #[cfg(feature = "jwt")]
+        if StatusCode::UNAUTHORIZED == response.status() {
             if let AuthState::Installation { ref token, .. } = self.auth_state {
                 token.clear();
             }

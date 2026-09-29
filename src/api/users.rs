@@ -5,11 +5,16 @@ use std::backtrace::Backtrace;
 use http::StatusCode;
 
 pub use self::follow::{ListUserFollowerBuilder, ListUserFollowingBuilder};
+pub use self::hovercard::HovercardBuilder;
+pub use self::user_gpg_keys::{ListUserGpgKeysBuilder, UserGpgKeysOpsBuilder};
 use self::user_repos::ListUserReposBuilder;
+use crate::api::activity::starring::ListReposStarredByUserBuilder;
+use crate::api::activity::watching::ListUserSubscriptionsBuilder;
+pub use crate::api::billing::ScopedBillingHandler as UserBillingHandler;
+use crate::api::events::EventsBuilder;
 use crate::api::users::user_blocks::BlockedUsersBuilder;
 use crate::api::users::user_emails::UserEmailsOpsBuilder;
 use crate::api::users::user_git_ssh_keys::UserGitSshKeysOpsBuilder;
-use crate::api::users::user_gpg_keys::UserGpgKeysOpsBuilder;
 use crate::api::users::user_social_accounts::UserSocialAccountsOpsBuilder;
 use crate::api::users::user_ssh_signing_keys::UserSshSigningKeysOpsBuilder;
 use crate::models::UserId;
@@ -17,6 +22,7 @@ use crate::params::users::emails::EmailVisibilityState;
 use crate::{error, GitHubError, Octocrab};
 
 mod follow;
+mod hovercard;
 mod user_blocks;
 mod user_emails;
 mod user_git_ssh_keys;
@@ -53,7 +59,46 @@ impl<'octo> UserHandler<'octo> {
         Self { crab, user }
     }
 
-    /// Get this users profile info
+    /// Handle billing for this user.
+    ///
+    /// See: <https://docs.github.com/en/rest/billing?apiVersion=2022-11-28>
+    pub fn billing(&self) -> crate::api::billing::ScopedBillingHandler<'octo> {
+        let username = match &self.user {
+            UserRef::ByString(name) => name.clone(),
+            UserRef::ById(id) => id.to_string(),
+        };
+        crate::api::billing::ScopedBillingHandler::new(
+            self.crab,
+            crate::api::billing::BillingOwner::User(username),
+        )
+    }
+
+    /// Handle packages for this user.
+    ///
+    /// See: <https://docs.github.com/en/rest/packages/packages?apiVersion=2022-11-28>
+    pub fn packages(&self) -> crate::api::packages::PackagesHandler<'octo> {
+        let username = match &self.user {
+            UserRef::ByString(name) => name.clone(),
+            UserRef::ById(id) => id.to_string(),
+        };
+        crate::api::packages::PackagesHandler::new(
+            self.crab,
+            crate::api::packages::PackagesOwner::User(username),
+        )
+    }
+
+    /// Get this user's profile info.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/users/users?apiVersion=2022-11-28#get-a-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let profile = octocrab.users("octocat").profile().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn profile(&self) -> crate::Result<crate::models::UserProfile> {
         // build the route to get info on this user
         let route = format!("/{}", self.user);
@@ -61,18 +106,244 @@ impl<'octo> UserHandler<'octo> {
         self.crab.get(route, None::<&()>).await
     }
 
-    /// List this users that follow this user
+    /// Gets a user installation for the authenticated app.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/apps/apps?apiVersion=2022-11-28#get-a-user-installation-for-the-authenticated-app)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let installation = octocrab.users("octocat").installation().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn installation(&self) -> crate::Result<crate::models::Installation> {
+        let route = format!("/{}/installation", self.user);
+        self.crab.get(route, None::<&()>).await
+    }
+
+    /// List users that follow this user.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/users/followers?apiVersion=2022-11-28#list-followers-of-a-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let followers = octocrab
+    ///     .users("octocat")
+    ///     .followers()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn followers(&self) -> ListUserFollowerBuilder<'_, '_> {
         ListUserFollowerBuilder::new(self)
     }
 
-    /// List this user is following
+    /// List people this user follows.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/users/followers?apiVersion=2022-11-28#list-the-people-a-user-follows)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let following = octocrab
+    ///     .users("octocat")
+    ///     .following()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn following(&self) -> ListUserFollowingBuilder<'_, '_> {
         ListUserFollowingBuilder::new(self)
     }
 
+    /// Lists public repositories for the specified user.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#list-repositories-for-a-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let repos = octocrab
+    ///     .users("octocat")
+    ///     .repos()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn repos(&self) -> ListUserReposBuilder<'_, '_> {
         ListUserReposBuilder::new(self)
+    }
+
+    /// Lists organizations for the specified user.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/orgs/members?apiVersion=2022-11-28#list-organizations-for-a-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let orgs = octocrab
+    ///     .users("octocat")
+    ///     .list_orgs()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn list_orgs(&self) -> crate::api::current::ListUserOrgsBuilder<'octo> {
+        crate::api::current::ListUserOrgsBuilder::new(self.crab, format!("/{}/orgs", self.user))
+    }
+
+    /// Lists repositories watched by this user.
+    ///
+    /// [See the GitHub API documentation](https://docs.github.com/en/rest/activity/watching?apiVersion=2022-11-28#list-repositories-watched-by-a-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let subscriptions = octocrab
+    ///     .users("octocat")
+    ///     .subscriptions()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn subscriptions(&self) -> ListUserSubscriptionsBuilder<'octo> {
+        ListUserSubscriptionsBuilder::new(self.crab, format!("/{}/subscriptions", self.user))
+    }
+
+    /// Lists repositories starred by this user.
+    ///
+    /// [See the GitHub API documentation](https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-repositories-starred-by-a-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let starred = octocrab
+    ///     .users("octocat")
+    ///     .starred()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn starred(&self) -> ListReposStarredByUserBuilder<'octo> {
+        ListReposStarredByUserBuilder::with_route(self.crab, format!("/{}/starred", self.user))
+    }
+
+    /// List events for this user.
+    ///
+    /// [See the GitHub API documentation](https://docs.github.com/en/rest/activity/events?apiVersion=2022-11-28#list-events-for-the-authenticated-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let events = octocrab
+    ///     .users("octocat")
+    ///     .events()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn events(&self) -> EventsBuilder<'octo> {
+        EventsBuilder::with_route(self.crab, format!("/{}/events", self.user))
+    }
+
+    /// List public events for this user.
+    ///
+    /// [See the GitHub API documentation](https://docs.github.com/en/rest/activity/events?apiVersion=2022-11-28#list-public-events-for-a-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let events = octocrab
+    ///     .users("octocat")
+    ///     .public_events()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn public_events(&self) -> EventsBuilder<'octo> {
+        EventsBuilder::with_route(self.crab, format!("/{}/events/public", self.user))
+    }
+
+    /// List events received by this user.
+    ///
+    /// [See the GitHub API documentation](https://docs.github.com/en/rest/activity/events?apiVersion=2022-11-28#list-events-received-by-the-authenticated-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let events = octocrab
+    ///     .users("octocat")
+    ///     .received_events()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn received_events(&self) -> EventsBuilder<'octo> {
+        EventsBuilder::with_route(self.crab, format!("/{}/received_events", self.user))
+    }
+
+    /// List public events received by this user.
+    ///
+    /// [See the GitHub API documentation](https://docs.github.com/en/rest/activity/events?apiVersion=2022-11-28#list-public-events-received-by-a-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let events = octocrab
+    ///     .users("octocat")
+    ///     .public_received_events()
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn public_received_events(&self) -> EventsBuilder<'octo> {
+        EventsBuilder::with_route(self.crab, format!("/{}/received_events/public", self.user))
+    }
+
+    /// List organization events for this user.
+    ///
+    /// [See the GitHub API documentation](https://docs.github.com/en/rest/activity/events?apiVersion=2022-11-28#list-organization-events-for-the-authenticated-user)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let events = octocrab
+    ///     .users("octocat")
+    ///     .org_events("org")
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn org_events(&self, org: impl AsRef<str>) -> EventsBuilder<'octo> {
+        EventsBuilder::with_route(
+            self.crab,
+            format!("/{}/events/orgs/{}", self.user, org.as_ref()),
+        )
     }
 
     /// API for listing blocked users
@@ -127,6 +398,8 @@ impl<'octo> UserHandler<'octo> {
                     documentation_url: None,
                     errors: None,
                     message: "".to_string(),
+                    rate_limit_reset: None,
+                    headers: None,
                 }),
                 backtrace: Backtrace::capture(),
             }),
@@ -201,6 +474,31 @@ impl<'octo> UserHandler<'octo> {
         UserGpgKeysOpsBuilder::new(self)
     }
 
+    /// List GPG keys for the given user, allowing for pagination.
+    ///
+    /// See: [GitHub API Documentation][docs] for `GET /users/{username}/gpg_keys`
+    ///
+    /// # Examples
+    ///
+    /// * Fetch 10 recent GPG keys for the user with login "foouser":
+    /// ```no_run
+    /// # async fn run() -> octocrab::Result<()> {
+    ///     let gpg_keys = octocrab::instance()
+    ///         .users("foouser")
+    ///         .list_user_gpg_keys()
+    ///         .page(1u32)
+    ///         .per_page(10u8)
+    ///         .send()
+    ///         .await?;
+    /// #   Ok(())
+    /// # }
+    /// ```
+    ///
+    /// [docs]: https://docs.github.com/en/rest/users/gpg-keys?apiVersion=2022-11-28#list-gpg-keys-for-a-user
+    pub fn list_user_gpg_keys(&self) -> ListUserGpgKeysBuilder<'_, '_> {
+        ListUserGpgKeysBuilder::new(self)
+    }
+
     ///Git SSH keys operations builder
     ///* List public SSH keys for the authenticated user
     ///* Create a public SSH key for the authenticated user
@@ -224,5 +522,30 @@ impl<'octo> UserHandler<'octo> {
     ///* Delete an SSH signing key for the authenticated user
     pub fn ssh_signing_keys(&self) -> UserSshSigningKeysOpsBuilder<'_, '_> {
         UserSshSigningKeysOpsBuilder::new(self)
+    }
+
+    /// Get contextual information for a user.
+    ///
+    /// Provides hovercard information. You can find out more about someone in
+    /// relation to their pull requests, issues, repositories, and organizations.
+    ///
+    /// See: [GitHub API Documentation][docs] for `GET /users/{username}/hovercard`
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run() -> octocrab::Result<()> {
+    ///     let hovercard = octocrab::instance()
+    ///         .users("octocat")
+    ///         .hovercard()
+    ///         .send()
+    ///         .await?;
+    /// #   Ok(())
+    /// # }
+    /// ```
+    ///
+    /// [docs]: https://docs.github.com/en/rest/users/users?apiVersion=2022-11-28#get-contextual-information-for-a-user
+    pub fn hovercard(&self) -> HovercardBuilder<'_, '_> {
+        HovercardBuilder::new(self)
     }
 }

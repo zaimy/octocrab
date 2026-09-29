@@ -4,7 +4,15 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Collected};
 use snafu::ResultExt;
 
+pub mod cache;
+pub mod environments;
+pub mod oidc;
+pub mod permissions;
 pub mod self_hosted_runners;
+
+pub use self::cache::{ListActionsCachesBuilder, ListOrgCacheUsageByRepositoryBuilder};
+pub use self::environments::{EnvironmentSecretsHandler, EnvironmentVariablesHandler};
+pub use self::permissions::ListOrgSelectedRepositoriesBuilder;
 
 use self::self_hosted_runners::{CreateJitRunnerConfigBuilder, ListSelfHostedRunnersBuilder};
 use crate::error::HttpSnafu;
@@ -438,6 +446,67 @@ impl<'octo> ActionsHandler<'octo> {
             .await
     }
 
+    /// Gets a specific artifact for a workflow run.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/actions/artifacts?apiVersion=2022-11-28#get-an-artifact)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let artifact = octocrab
+    ///     .actions()
+    ///     .get_artifact("owner", "repo", 1234u64.into())
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_artifact(
+        &self,
+        owner: impl AsRef<str>,
+        repo: impl AsRef<str>,
+        artifact_id: ArtifactId,
+    ) -> crate::Result<WorkflowListArtifact> {
+        let route = format!(
+            "/repos/{owner}/{repo}/actions/artifacts/{artifact_id}",
+            owner = owner.as_ref(),
+            repo = repo.as_ref(),
+            artifact_id = artifact_id,
+        );
+        self.crab.get(route, None::<&()>).await
+    }
+
+    /// Deletes an artifact for a workflow run.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/actions/artifacts?apiVersion=2022-11-28#delete-an-artifact)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// octocrab
+    ///     .actions()
+    ///     .delete_artifact("owner", "repo", 1234u64.into())
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn delete_artifact(
+        &self,
+        owner: impl AsRef<str>,
+        repo: impl AsRef<str>,
+        artifact_id: ArtifactId,
+    ) -> crate::Result<()> {
+        let route = format!(
+            "/repos/{owner}/{repo}/actions/artifacts/{artifact_id}",
+            owner = owner.as_ref(),
+            repo = repo.as_ref(),
+            artifact_id = artifact_id,
+        );
+        let response = self.crab._delete(route, None::<&()>).await?;
+        crate::map_github_error(response).await.map(drop)
+    }
+
     /// Deletes all logs for a workflow run. You must authenticate using an
     /// access token with the `repo` scope to use this endpoint. GitHub Apps
     /// must have the `actions:write` permission to use this endpoint.
@@ -479,8 +548,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let org = octocrab.actions().get_org_public_key("org").await?;
     /// # Ok(())
     /// # }
@@ -498,6 +566,19 @@ impl<'octo> ActionsHandler<'octo> {
     /// repository can use this endpoint. If the repository is private you
     /// must use an access token with the `repo` scope. GitHub Apps must have
     /// the `actions:read` permission to use this endpoint.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let artifacts = octocrab
+    ///     .actions()
+    ///     .list_workflow_run_artifacts("owner", "repo", 1234u64.into())
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn list_workflow_run_artifacts(
         &self,
         owner: impl Into<String>,
@@ -539,8 +620,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// must have the `actions:write` permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// octocrab.actions()
     ///    .create_workflow_dispatch("org", "repo", "workflow.yaml", "ref")
     ///    // optional
@@ -573,8 +653,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// `organization_self_hosted_runners` permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let runners = octocrab.actions()
     ///    .list_org_self_hosted_runners("org")
     ///    // optional
@@ -604,8 +683,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// 1 and 100 labels, inclusive.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let jit_config = octocrab
     ///     .actions()
     ///     .create_repo_jit_runner_config(
@@ -646,8 +724,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// `organization_self_hosted_runners` permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let token_resp = octocrab.actions()
     ///    .create_org_runner_registration_token("org")
     ///    .await?;
@@ -676,8 +753,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// `organization_self_hosted_runners` permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let token_resp = octocrab.actions()
     ///    .create_org_runner_remove_token("org")
     ///    .await?;
@@ -704,8 +780,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// `organization_self_hosted_runners` permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let runner = octocrab.actions()
     ///    .get_org_runner("org", 27.into())
     ///    .await?;
@@ -734,8 +809,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// `organization_self_hosted_runners` permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// octocrab.actions()
     ///    .delete_org_runner("org", 27.into())
     ///    .await?;
@@ -763,8 +837,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// permission for repositories to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let runners = octocrab.actions()
     ///    .list_repo_self_hosted_runners("owner", "repo")
     ///    // optional
@@ -795,8 +868,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// 1 and 100 labels, inclusive.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let jit_config = octocrab
     ///     .actions()
     ///     .create_org_jit_runner_config(
@@ -838,8 +910,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let token_resp = octocrab.actions()
     ///    .create_repo_runner_registration_token("owner", "repo")
     ///    .await?;
@@ -870,8 +941,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let token_resp = octocrab.actions()
     ///    .create_repo_runner_registration_token("owner", "repo")
     ///    .await?;
@@ -900,8 +970,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// let runner = octocrab.actions()
     ///    .get_repo_runner("owner", "repo", 27.into())
     ///    .await?;
@@ -932,8 +1001,7 @@ impl<'octo> ActionsHandler<'octo> {
     /// permission to use this endpoint.
     ///
     /// ```no_run
-    /// # async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// octocrab.actions()
     ///    .delete_repo_runner("owner", "repo", 27.into())
     ///    .await?;

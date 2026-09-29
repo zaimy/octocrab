@@ -45,7 +45,7 @@ pub struct Run {
     // "pull_requests":[{"url":"https://api.github.com/repos/artichoke/artichoke/pulls/1346","id":717179206,"number":1346,"head":{"ref":"pernosco-integration","sha":"9ee4335ecfc3e7abe44bddadb117a23d0d63e4ee","repo":{"id":199196552,"url":"https://api.github.com/repos/artichoke/artichoke","name":"artichoke"}},"base":{"ref":"trunk","sha":"abbb7cf0c75ab51b84309ac547c3c3c089dd36eb","repo":{"id":199196552,"url":"https://api.github.com/repos/artichoke/artichoke","name":"artichoke"}}}]
     // pub pull_requests: Vec<super::pulls::PullRequest>,
     // TODO: other attrs
-    // ref: https://docs.github.com/en/rest/reference/actions#list-workflow-runs
+    // ref: https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28#list-workflow-runs-for-a-repository
     pub head_commit: HeadCommit,
     pub repository: Repository,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -170,4 +170,114 @@ pub struct WorkflowDispatch {
     pub r#ref: String,
     #[serde(skip_serializing_if = "serde_json::Value::is_null")]
     pub inputs: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WorkflowUsage {
+    pub billable: WorkflowBillable,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WorkflowBillable {
+    #[serde(default, rename = "UBUNTU")]
+    pub ubuntu: Option<WorkflowPlatformUsage>,
+    #[serde(default, rename = "MACOS")]
+    pub macos: Option<WorkflowPlatformUsage>,
+    #[serde(default, rename = "WINDOWS")]
+    pub windows: Option<WorkflowPlatformUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WorkflowPlatformUsage {
+    #[serde(default)]
+    pub total_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WorkflowRunUsage {
+    pub billable: WorkflowRunBillable,
+    #[serde(default)]
+    pub run_duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WorkflowRunBillable {
+    #[serde(default, rename = "UBUNTU")]
+    pub ubuntu: Option<WorkflowRunPlatformUsage>,
+    #[serde(default, rename = "MACOS")]
+    pub macos: Option<WorkflowRunPlatformUsage>,
+    #[serde(default, rename = "WINDOWS")]
+    pub windows: Option<WorkflowRunPlatformUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WorkflowRunPlatformUsage {
+    #[serde(default)]
+    pub total_ms: u64,
+    #[serde(default)]
+    pub jobs: u64,
+    #[serde(default)]
+    pub job_runs: Vec<WorkflowRunJobRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WorkflowRunJobRun {
+    pub job_id: u64,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WorkflowRunApproval {
+    #[serde(default)]
+    pub environments: Vec<PendingDeploymentEnvironment>,
+    pub user: super::Author,
+    pub state: String,
+    pub comment: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct PendingDeployment {
+    pub environment: PendingDeploymentEnvironment,
+    #[serde(default)]
+    pub wait_timer: u64,
+    pub wait_timer_started_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub current_user_can_approve: bool,
+    #[serde(default)]
+    pub reviewers: Vec<PendingDeploymentReviewer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct PendingDeploymentEnvironment {
+    pub id: u64,
+    pub node_id: String,
+    pub name: String,
+    pub url: String,
+    pub html_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct PendingDeploymentReviewer {
+    #[serde(rename = "type")]
+    pub reviewer_type: String,
+    pub reviewer: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ReviewDeploymentState {
+    Approved,
+    Rejected,
 }

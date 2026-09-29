@@ -177,7 +177,6 @@ impl<'iter, T> IntoIterator for &'iter Page<T> {
     }
 }
 
-#[async_trait::async_trait]
 impl<T: serde::de::DeserializeOwned> crate::FromResponse for Page<T> {
     async fn from_response<B>(response: http::Response<B>) -> crate::Result<Self>
     where
@@ -214,6 +213,13 @@ impl<T: serde::de::DeserializeOwned> crate::FromResponse for Page<T> {
                 "repositories",
                 "installations",
                 "runners",
+                "codespaces",
+                "secrets",
+                "devcontainers",
+                "machines",
+                "migrations",
+                "seats",
+                "alerts",
             ]
             .into_iter()
             .find(|v| json.get(v).is_some())
