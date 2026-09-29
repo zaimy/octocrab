@@ -49,9 +49,25 @@ impl<'octo, 'b> SpecificPullRequestBuilder<'octo, 'b> {
         self
     }
 
-    ///Lists a maximum of 250 commits for a pull request.
+    /// Lists a maximum of 250 commits for a pull request.
+    ///
     /// To receive a complete commit list for pull requests with more than 250 commits,
-    /// use the [List commits](https://docs.github.com/rest/commits/commits#list-commits) endpoint.
+    /// use the [List commits](https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28#list-commits) endpoint.
+    ///
+    /// See: [GitHub API Documentation](https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#list-commits-on-a-pull-request)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
+    /// let commits = octocrab
+    ///     .pulls("owner", "repo")
+    ///     .pull_number(42)
+    ///     .commits()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn commits(&self) -> crate::Result<Page<RepoCommit>> {
         let route = format!(
             "/repos/{owner}/{repo}/pulls/{pr_number}/commits",
@@ -65,8 +81,7 @@ impl<'octo, 'b> SpecificPullRequestBuilder<'octo, 'b> {
     /// Creates a new `ReviewsBuilder`
     /// ```no_run
     /// # use octocrab::models::CommentId;
-    ///  async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// use octocrab::params;
     ///
     /// let _ = octocrab.pulls("owner", "repo")
@@ -85,8 +100,7 @@ impl<'octo, 'b> SpecificPullRequestBuilder<'octo, 'b> {
     /// Creates a new `SpecificPullRequestCommentBuilder`
     /// ```no_run
     /// # use octocrab::models::CommentId;
-    ///  async fn run() -> octocrab::Result<()> {
-    /// # let octocrab = octocrab::Octocrab::default();
+    /// # async fn run(octocrab: &octocrab::Octocrab) -> octocrab::Result<()> {
     /// use octocrab::params;
     ///
     /// let _ = octocrab.pulls("owner", "repo")

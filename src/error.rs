@@ -1,7 +1,8 @@
 use http::uri::InvalidUri;
 
-use snafu::{Backtrace, Snafu};
+use snafu::{Backtrace, GenerateImplicitData, Snafu};
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::string::FromUtf8Error;
@@ -75,6 +76,13 @@ pub enum Error {
         backtrace: Backtrace,
     },
 
+    #[cfg(feature = "reqwest")]
+    #[snafu(display("Reqwest Error: {}", source))]
+    Reqwest {
+        source: reqwest::Error,
+        backtrace: Backtrace,
+    },
+
     #[snafu(display("Serde Url Encode Error: {}", source))]
     SerdeUrlEncoded {
         source: serde_urlencoded::ser::Error,
@@ -91,6 +99,8 @@ pub enum Error {
         source: serde_path_to_error::Error<serde_json::Error>,
         backtrace: Backtrace,
     },
+    #[cfg(feature = "jwt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jwt")))]
     #[snafu(display("JWT Error in {}", source))]
     JWT {
         source: jsonwebtoken::errors::Error,
@@ -101,10 +111,40 @@ pub enum Error {
         source: GraphqlErrors,
         backtrace: Backtrace,
     },
+    #[snafu(display("Webhook Verification Error: {}", source))]
+    WebhookVerification {
+        source: crate::models::webhook_events::verification::WebhookVerificationError,
+        backtrace: Backtrace,
+    },
     Other {
         source: Box<dyn std::error::Error + Send + Sync>,
         backtrace: Backtrace,
     },
+}
+
+impl From<crate::models::webhook_events::verification::WebhookVerificationError> for Error {
+    fn from(source: crate::models::webhook_events::verification::WebhookVerificationError) -> Self {
+        Self::WebhookVerification {
+            source,
+            backtrace: snafu::Backtrace::generate(),
+        }
+    }
+}
+
+impl From<crate::models::webhook_events::verification::WebhookEventError> for Error {
+    fn from(source: crate::models::webhook_events::verification::WebhookEventError) -> Self {
+        match source {
+            crate::models::webhook_events::verification::WebhookEventError::Verification {
+                source,
+            } => source.into(),
+            crate::models::webhook_events::verification::WebhookEventError::Json { source } => {
+                Self::Serde {
+                    source,
+                    backtrace: snafu::Backtrace::generate(),
+                }
+            }
+        }
+    }
 }
 
 /// An error returned from GitHub's API.
@@ -115,6 +155,19 @@ pub struct GitHubError {
     pub errors: Option<Vec<serde_json::Value>>,
     pub message: String,
     pub status_code: http::StatusCode,
+    /// The timestamp in UTC seconds at which the current rate limit resets, if provided by the `x-ratelimit-reset` header.
+    pub rate_limit_reset: Option<u64>,
+    /// The HTTP response headers returned with the error, if available.
+    pub headers: Option<http::HeaderMap>,
+}
+
+impl GitHubError {
+    /// Returns the rate limit reset time as a [`chrono::DateTime<chrono::Utc>`], if available.
+    pub fn rate_limit_reset_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        self.rate_limit_reset
+            .and_then(|ts| i64::try_from(ts).ok())
+            .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+    }
 }
 
 impl fmt::Display for GitHubError {

@@ -46,6 +46,11 @@ pub enum LockReason {
     Spam,
 }
 
+pub mod packages {
+    //! Parameter types for the packages API.
+    pub use crate::models::packages::{PackageType, PackageVersionState, PackageVisibility};
+}
+
 pub mod actions {
     //! Parameter types for the actions API.
 
@@ -83,7 +88,7 @@ pub mod apps {
 
     use crate::models::RepositoryId;
 
-    /// <https://docs.github.com/en/rest/reference/apps#create-an-installation-access-token-for-an-app>
+    /// [GitHub API Documentation](https://docs.github.com/en/rest/apps/apps?apiVersion=2022-11-28#create-an-installation-access-token-for-an-app)
     #[derive(Debug, Clone, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize, Default)]
     #[serde(rename_all = "snake_case")]
     #[non_exhaustive]
@@ -284,6 +289,19 @@ pub mod issues {
         Comments,
     }
 
+    /// Indicates which sorts of issues to return for user or organization issues.
+    #[derive(Debug, Clone, Copy, serde::Serialize)]
+    #[serde(rename_all = "snake_case")]
+    #[non_exhaustive]
+    pub enum IssueFilter {
+        Assigned,
+        Created,
+        Mentioned,
+        Subscribed,
+        Repos,
+        All,
+    }
+
     /// A generic filter type that allows you to filter either by exact match,
     /// any match, or no matches.
     #[derive(Debug, Clone, Copy)]
@@ -333,6 +351,19 @@ pub mod issues {
                 serde_json::to_string(&Filter::<()>::None).unwrap()
             );
         }
+    }
+}
+
+pub mod milestones {
+    //! Parameter types for the milestones API.
+
+    /// What to sort milestone results by. Can be either `due_on` or `completeness`.
+    #[derive(Debug, Clone, Copy, serde::Serialize)]
+    #[serde(rename_all = "snake_case")]
+    #[non_exhaustive]
+    pub enum Sort {
+        DueOn,
+        Completeness,
     }
 }
 
@@ -477,6 +508,43 @@ pub mod repos {
         FullName,
     }
 
+    /// The time frame to display traffic results for.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+    #[serde(rename_all = "snake_case")]
+    #[non_exhaustive]
+    pub enum TrafficInterval {
+        Day,
+        Week,
+    }
+
+    pub use crate::models::repos::ActivityType;
+
+    /// The time period to filter repository activity by.
+    ///
+    /// [GitHub API Documentation](https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#list-repository-activities)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[non_exhaustive]
+    pub enum ActivityTimePeriod {
+        Day,
+        Week,
+        Month,
+        Quarter,
+        Year,
+    }
+
+    impl std::fmt::Display for ActivityTimePeriod {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Day => write!(f, "day"),
+                Self::Week => write!(f, "week"),
+                Self::Month => write!(f, "month"),
+                Self::Quarter => write!(f, "quarter"),
+                Self::Year => write!(f, "year"),
+            }
+        }
+    }
+
     /// A Git reference, either a branch, tag, or rev.
     #[derive(Debug, Clone)]
     pub enum Reference {
@@ -522,6 +590,12 @@ pub mod repos {
     impl From<String> for Commitish {
         fn from(s: String) -> Commitish {
             Commitish(s)
+        }
+    }
+
+    impl From<&str> for Commitish {
+        fn from(s: &str) -> Commitish {
+            Commitish(s.to_string())
         }
     }
 
@@ -575,6 +649,8 @@ pub mod teams {
         Maintain,
         Triage,
     }
+
+    pub use crate::models::memberships::Role;
 }
 
 pub mod workflows {
@@ -614,6 +690,32 @@ pub mod users {
         pub enum EmailVisibilityState {
             Public,
             Private,
+        }
+    }
+
+    pub mod hovercard {
+        use serde::{Deserialize, Serialize};
+
+        /// Identifies which additional information you'd like to receive about the person's hovercard.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[non_exhaustive]
+        pub enum SubjectType {
+            Organization,
+            Repository,
+            Issue,
+            PullRequest,
+        }
+
+        impl std::fmt::Display for SubjectType {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    Self::Organization => write!(f, "organization"),
+                    Self::Repository => write!(f, "repository"),
+                    Self::Issue => write!(f, "issue"),
+                    Self::PullRequest => write!(f, "pull_request"),
+                }
+            }
         }
     }
 }
